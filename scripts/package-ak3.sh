@@ -22,6 +22,7 @@ git -C "$TMP/ak3" checkout -q --detach "$AK3_SHA"
 test -s "$TMP/ak3/tools/ak3-core.sh"
 rm -rf "$TMP/ak3/.git" "$TMP/ak3/.github"
 cp "$KERNEL_IMAGE" "$TMP/ak3/Image.gz-dtb"
+python3 "$ROOT/scripts/normalize_enchilada_dtbs.py" "$TMP/ak3/Image.gz-dtb"
 cat > "$TMP/ak3/anykernel.sh" <<'AK3SCRIPT'
 ### AnyKernel3 Ramdisk Mod Script
 ## osm0sis @ xda-developers
@@ -69,7 +70,7 @@ unzip -tqq "$PACKAGE"
 unzip -Z1 "$PACKAGE" | grep -qx 'anykernel.sh'
 unzip -Z1 "$PACKAGE" | grep -qx 'Image.gz-dtb'
 unzip -Z1 "$PACKAGE" | grep -qx 'tools/ak3-core.sh'
-[ "$(unzip -p "$PACKAGE" Image.gz-dtb | sha256sum | cut -d' ' -f1)" = "$(sha256sum "$KERNEL_IMAGE" | cut -d' ' -f1)" ]
+[ "$(unzip -p "$PACKAGE" Image.gz-dtb | sha256sum | cut -d' ' -f1)" = "$(sha256sum "$TMP/ak3/Image.gz-dtb" | cut -d' ' -f1)" ]
 (cd "$OUT_DIR" && sha256sum "$(basename "$PACKAGE")" > "$(basename "$PACKAGE").sha256")
 cp out/.config "$OUT_DIR/kernel.config"
 cp "$TMP/ak3/README-EXPERIMENTAL.txt" "$OUT_DIR/BUILD_INFO.txt"
