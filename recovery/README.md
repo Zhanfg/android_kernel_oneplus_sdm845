@@ -2,18 +2,21 @@
 
 **State: source implemented + host test passes. TWRP binary build and real boot not yet proven. Not for direct flashing.**
 
-This package contains actual TWRP Android14 device-tree source, two explicit legacy-vs-retrofit recovery fstab profiles, an Android14-based TWRP manifest sync/build path, host ABI and SDM845 DTB validators, and CI instructions. It uses the compiled Linux **4.19.325 BakaSU** kernel from GitHub Actions run #38047144934. It never silently replaces the user-supplied Linux **4.9.337** boot kernel.
+This source is an actual Android 14-based TWRP recovery-as-boot device tree for the **current uploaded Android 17 / Linux 4.19.325** `boot.img` (SHA256 `6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e`). Directly decompressed from that image, its first-stage and recovery fstab map EROFS **logical** `system`/`vendor`/`odm`, `/metadata` to physical `logdump` ext4 and `/data` to ext4 FBEv2. The prior stale decompression files describing a separate Linux 4.9 image must not be used.
+
+The port uses the matching compiled Linux **4.19.325 BakaSU** kernel from GitHub Actions job #38047144934; the appended SDM845 FDT blobs match this same 4.19 uploaded boot.img byte-for-byte. The recovery userspace is TWRP 14 from nebrassy `twrp-14`, not a retitled old TWRP 11 binary.
 
 Files:
-- `device/oneplus/enchilada/BoardConfig.mk`, `AndroidProducts.mk`, `device.mk`, `twrp_enchilada.mk`: buildable Android-based TWRP product and 64 MiB boot-header v1 Recovery-as-Boot target.
-- `device/oneplus/enchilada/recovery/root/system/etc/recovery.fstab`: conservative *legacy* profile matching observed 4.9 boot ramdisk (no system/vendor write access).
-- `device/oneplus/enchilada/recovery/root/system/etc/recovery-retrofit.fstab`: opt-in experimental EROFS+logical profile, **not** evidenced by the provided 4.9 Ramdisk. Must match current *running* Android17 ROM before use.
-- `tools/check_port.py`: refuses changed 4.19 DTB bytes, wrong boot v1 headers, oversized boot image, dangerous fstab flags and injected nonmatching kernels.
-- `tools/build_4_19_twrp_ci.sh`: host-only recovery image builder, with explicit layout selection.
-- `.github/workflows/enchilada-twrp14-build.yml`: GitHub Actions source sync, compile and artifact upload. CI produces fastboot-boot **unverified** candidates only if all checks pass.
-- `tests/test_port.py`: smoke and negative tests, runnable with stock Python.
+- `device/oneplus/enchilada/{BoardConfig.mk,AndroidProducts.mk,device.mk,twrp_enchilada.mk}`: standalone TWRP product for 64 MiB boot-header v1 Recovery-as-Boot.
+- `device/oneplus/enchilada/recovery/root/system/etc/recovery.fstab`: **selected** Android 17 dynamic/EROFS layout extracted from the current boot ramdisk; mounted sensitive partitions read-only and removed dangerous `formattable` flags.
+- `.../recovery-retrofit.fstab`: identical current ROM profile, retained explicitly for clarity.
+- `.../recovery-legacy.fstab`: historical fallback only for a **different** previous Linux 4.9 image, never the current Android17 default.
+- `tools/check_port.py`: verifies 4.19 DTB SHA256, boot v1 ABI, partition limit, safe fstab flags and recovery-image kernel equality.
+- `tools/build_4_19_twrp_ci.sh` and `.github/workflows/enchilada-twrp14-build.yml`: automated host source sync and attempted recovery bootimage build, no device modifications.
+- `tests/test_port.py`: host unit and fail-closed checks.
 
-Build source pinned project: `https://github.com/nebrassy/platform_manifest_twrp_aosp` / branch `twrp-14`. The TeamWin `android-11` device tree provided hardware context only. The source from the uploaded **4.9.337** image is not an Android17 dynamic layout: `recovery.fstab` uses physical ext4 system/vendor and `fileencryption=ice`; prior claims that it contained EROFS/FBEv2 were wrong and have been corrected. The target 4.19 Android17 ROM fstab remains unverified.
+Current Github build input `TWRP_LAYOUT=retrofit` is the default; `legacy` is an explicitly marked debugging alternative. The current 4.19 Ramdisk is the authority for target layouts. Build and runtime support of FBEv2/keymaster is not yet established and remains disabled.
+
 
 Explicitly unsupported in v0.1: Android17 FBE encrypted data decryption, active-slot OTA writeback, AVB resigning, guaranteed dynamic mount, permanent TWRP installation, and verified touch/display/fastbootd operation. `TW_INCLUDE_CRYPTO` defaults false. Neither a test build nor a successful CI compile proves functional recovery.
 

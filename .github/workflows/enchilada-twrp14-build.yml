@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       partition_layout:
-        description: 'Experimental fstab: original 4.9 legacy, or unverified Android17 retrofit'
+        description: 'Fstab: current Linux 4.19 Android17 retrofit or older incompatible Linux4.9 legacy'
         required: true
         type: choice
-        default: legacy
+        default: retrofit
         options:
           - legacy
           - retrofit
@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     env:
-      TWRP_LAYOUT: ${{ inputs.partition_layout || 'legacy' }}
+      TWRP_LAYOUT: ${{ inputs.partition_layout || 'retrofit' }}
     steps:
       - name: Checkout Recovery source only
         uses: actions/checkout@v4
@@ -93,7 +93,7 @@ jobs:
           cd "$RUNNER_TEMP/twrp"
           repo sync -c -j4 --no-tags --no-clone-bundle --fail-fast
           df -h .
-      - name: Compile TWRP bootimage for enchilada (legacy fstab only on push)
+      - name: Compile TWRP bootimage for enchilada (actual 4.19 dynamic fstab by default)
         shell: bash
         run: |
           set -euo pipefail

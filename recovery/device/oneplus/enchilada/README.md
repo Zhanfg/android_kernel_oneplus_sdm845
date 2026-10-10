@@ -1,28 +1,15 @@
-# OnePlus 6 / enchilada — Android 17 TWRP port, experimental source
+# OnePlus 6 / enchilada — Android 17 TWRP 14 recovery port, G1
 
-This is a **real device-tree and build integration work-in-progress**, not a finished TWRP recovery image.
+Actual uploaded `boot.img` SHA-256 `6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e` **is Linux 4.19.325-cip136**, boot header v1 and 64 MiB. Its recovery cpio uses **EROFS+logical** `system`/`vendor`/`odm`, ext4 `/metadata` backed by `logdump`, and `/data` `fileencryption=aes-256-xts:aes-256-cts:v2`. Current default fstab follows the observed 4.19 ROM. The old extracted 4.9.337 image was a stale sidecar from an earlier boot and is deliberately not used here.
 
-Recovery userspace: nebrassy TWRP AOSP 14 (`twrp-14`); older TeamWin OnePlus6 `android-11` is only a device reference. Kernel: pinned successful `4.19.325` BakaSU `Image.gz-dtb` from workflow `38043895739`, repacked to 4.19 donor's DTB order by job `38047144934`.
+The compiled BakaSU 4.19 kernel is reused unchanged from successful AK3 job `38047144934`; its 3 appended DTBs are verified to match the **current 4.19 boot.img's** DTBs. TWRP14 userspace is built independently from `nebrassy/platform_manifest_twrp_aosp` `twrp-14`. This build is experimental until CI emits a valid `boot.img` and device host performs temporary boot and functional testing.
 
-**Critical mismatch**: user-provided `/mnt/data/boot.img` is Linux **4.9.337** with legacy ext4 `fileencryption=ice` recovery.fstab. It is **not** the `4.19` Android17 production boot image. The 4.19 AK3's FDT hashes **do not match** the 4.9 boot FDTs, so do not use the 4.9 image to assert that a 4.19 recovery can boot. The prior analysis suggesting EROFS/FBEv2 were inside this boot image was incorrect. The source carries two mutually exclusive fstab templates; neither proves current running ROM partition layout.
+## Safety
+- `recovery.fstab` is the selected *actual 4.19 retrofit* profile. Sensitive partitions deliberately mount read-only and `formattable` is removed; no flash/wipe is authorized.
+- `recovery-legacy.fstab` is only for the earlier **different** 4.9.337 donor image; do not select it on this 4.19 ROM.
+- `TW_INCLUDE_CRYPTO=false`, so `/data` decryption is **not supported** in this candidate, despite `fileencryption=...` describing on-disk data.
+- Do NOT run `fastboot flash recovery`, `fastboot flash boot` or any persistent installer based on this G1 port; first validate temporary `fastboot boot` with external host and existing recovery/boot backup.
+- The 4.19 ROM fstab had `formattable` in it, but this recovery prototype does **not** inherit any formatter privileges by default.
+- Android 14 TWRP userspace may lack Android 17 FBE HAL compatibility. A compiled binary is not a stable daily recovery.
 
-### Safe gates
-1. Build source tree and inspect `boot.img` on host, without flashing.
-2. Validate ROM's actual init fstab and `androidboot.super_partition` on phone using the parameterless read-only probe.
-3. Only when donor kernel boots AND boot image/AVB has been validated: `fastboot boot twrp_enchilada_boot.img` from external host (never `fastboot flash recovery`).
-4. Test GUI, touchscreen, adb, userspace fastbootd, block device mappings and read-only access; **never wipe/format** while encryption unavailable.
-5. FBE/Keymaster for Android17 is disabled by default, not magically solved by building Android14 TWRP.
-6. No permanent flashable image or AK3 is authorized until actual device test of this candidate.
-
-### Rebuild instructions (Android host)
-```
-repo init --depth=1 -u https://github.com/nebrassy/platform_manifest_twrp_aosp -b twrp-14
-repo sync -c -j4 --no-tags --no-clone-bundle
-cp -a this-tree/device/oneplus/enchilada device/oneplus/
-mkdir -p device/oneplus/enchilada/prebuilt
-unzip -p android17-ak3.zip Image.gz-dtb > device/oneplus/enchilada/prebuilt/Image.gz-dtb
-. build/envsetup.sh
-lunch twrp_enchilada-eng
-m -j4 bootimage
-```
-`bootimage` is the output because this is Recovery-as-Boot. The compilation can fail on unresolved 14.x/TWRP API or device-blob dependencies; CI records the failure rather than fabricating a binary. Boot image must be <= 64 MiB and v1; AVB is not signed in this preflight.
+See root README for GitHub CI steps and source snapshot.

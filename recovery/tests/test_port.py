@@ -14,8 +14,8 @@ class TWRPPortTests(unittest.TestCase):
 
     def test_explicit_layouts(self):
         dr=ROOT/'device/oneplus/enchilada/recovery/root/system/etc'
-        physical=module.check_fstab(dr/'recovery.fstab','legacy')
-        logical=module.check_fstab(dr/'recovery-retrofit.fstab','retrofit')
+        physical=module.check_fstab(dr/'recovery-legacy.fstab','legacy')
+        logical=module.check_fstab(dr/'recovery.fstab','retrofit')
         self.assertNotEqual(physical,logical)
 
     def test_reject_unsafe_fstab(self):

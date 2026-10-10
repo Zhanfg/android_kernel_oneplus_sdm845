@@ -1,8 +1,12 @@
-# Experimental retrofit dynamic partition variant - NEVER auto-select without device fstab proof.
-# On this platform androidboot.super_partition=system; bootloader does not load logical recovery.
-# Source paths shown as existing GPT backing devices; dm mappings resolve via first_stage_init.
-/dev/block/by-name/system /system erofs ro,discard wait,slotselect,logical,first_stage_mount
-/dev/block/by-name/vendor /vendor erofs ro,discard wait,slotselect,logical,first_stage_mount
-/dev/block/by-name/odm /odm erofs ro,discard wait,slotselect,logical,first_stage_mount
-/dev/block/bootdevice/by-name/userdata /data ext4 noatime,nosuid,nodev,discard wait,check,fileencryption=aes-256-xts:aes-256-cts:v2,quota
+# OnePlus 6 / uploaded 2026-10-10 boot.img SHA256 6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e
+# Android 17 Recovery-as-Boot v1, Linux 4.19.325-cip136. Verified from current Ramdisk.
+# Original fstab contains `formattable` on data + metadata; intentionally removed for safety.
+# Device-mapper logical partitions: source names must match actual AOSP first-stage fstab.
+# <src> <mnt_point> <type> <mnt_flags> <fs_mgr_flags>
+system /system erofs ro wait,slotselect,avb=vbmeta,logical,first_stage_mount
+vendor /vendor erofs ro wait,slotselect,avb,logical,first_stage_mount
+odm /odm erofs ro wait,slotselect,avb,logical,first_stage_mount
+/dev/block/by-name/logdump /metadata ext4 ro,noatime,nosuid,nodev wait,check,first_stage_mount
+/dev/block/bootdevice/by-name/userdata /data ext4 ro,noatime,nosuid,nodev wait,check,fileencryption=aes-256-xts:aes-256-cts:v2,fsverity,quota
 /dev/block/bootdevice/by-name/misc /misc emmc defaults defaults
+/dev/block/bootdevice/by-name/persist /mnt/vendor/persist ext4 ro,noatime,nosuid,nodev wait

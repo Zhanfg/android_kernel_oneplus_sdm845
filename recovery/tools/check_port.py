@@ -99,8 +99,8 @@ def main():
     args = p.parse_args()
     d = args.root/'device/oneplus/enchilada'
     check_board(d/'BoardConfig.mk')
-    check_fstab(d/'recovery/root/system/etc/recovery.fstab','legacy')
-    check_fstab(d/'recovery/root/system/etc/recovery-retrofit.fstab','retrofit')
+    check_fstab(d/'recovery/root/system/etc/recovery.fstab','retrofit')
+    check_fstab(d/'recovery/root/system/etc/recovery-legacy.fstab','legacy')
     if args.kernel:
         b=args.kernel.read_bytes()
         n,sha=parse_kernel(b)
@@ -109,7 +109,7 @@ def main():
             check_bootimg(args.boot,b)
     elif args.boot:
         p.error('--boot requires --kernel')
-    print('NO DEVICE/ROM VALIDATION DONE. 4.9 boot image is not a 4.19 donor.')
+    print('Current 4.19 ROM layout+DTB checks passed. TWRP DEVICE BOOT NOT TESTED.')
 
 if __name__=='__main__':
     main()
