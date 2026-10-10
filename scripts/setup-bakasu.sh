@@ -16,6 +16,8 @@ if [ ! -e drivers/kernelsu ]; then
     ln -s ../KernelSU/kernel drivers/kernelsu
 fi
 [ -f drivers/kernelsu/Kconfig ] || { echo "BakaSU Kconfig missing" >&2; exit 1; }
+# On Android 17, repeat upstream signature-verified manager detection once at boot-completed if none registered.
+python3 scripts/patch-bakasu-manager-discovery.py
 grep -qxF 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile ||
     printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
 grep -qxF 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig ||
