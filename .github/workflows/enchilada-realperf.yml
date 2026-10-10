@@ -47,7 +47,7 @@ jobs:
           with tempfile.TemporaryDirectory() as d:
               pp=Path(d)/'a.txt'
               data=['IDLE','1','1']+['0']*(len(c.COLUMNS)-3)
-              pp.write_text('META|format|pipe-delimited-v1\\nDATA|'+'|'.join(data)+'\\nCOMPLETE|/tmp/a.txt\\n')
+              pp.write_text('META|format|pipe-delimited-v1\nDATA|'+'|'.join(data)+'\nCOMPLETE|/tmp/a.txt\n')
               meta,rows=c.load(pp)
               assert len(rows)==1 and rows[0]['phase']=='IDLE'
           print('PASS: no-invalid-policy, warning emitted, schema 29 cols, synthetic log parsed')
