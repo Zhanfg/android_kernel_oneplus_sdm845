@@ -4,6 +4,7 @@
 
 ## Bottom line
 
+> **CORRECTION (2026-10-10, actual uploaded image re-parsed):** The uploaded 64 MiB boot.img SHA-256 is **6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e**, with **Linux 4.9.337** (NOT Linux 4.19.325). The Ramdisk's first_stage_ramdisk/system/etc/fstab.qcom and system/etc/recovery.fstab both contain physical ext4 system/vendor and **fileencryption=ice** for userdata (NOT EROFS logical or FBEv2). Three 4.9 FDTs do **not** byte-match the independent 4.19.325 BakaSU CI FDTs. Android17 target live partition layout is **UNCONFIRMED**. Earlier report assertions to the contrary are withdrawn; no boot image match or current ROM readiness claim can be made from this upload. For source port see PR #6, using separate 4.19 kernel and explicit layout selection.\n\n
 The stock SDM845 A/B bootloader uses **Recovery-as-Boot**, not a separately addressable GPT `recovery` partition. Retrofit dynamic partitions are distinct from A/B: they expose logical system/vendor/odm devices through Linux device mapper, not a new bootloader-loadable recovery image.
 
 **Viable**: independent full TWRP recovery *environment* (GUI/ADB/fastbootd), booting through existing `boot_a` / `boot_b` in recovery mode and sharing an unchanged tested Linux 4.19 kernel and root integration.
@@ -19,13 +20,13 @@ The stock SDM845 A/B bootloader uses **Recovery-as-Boot**, not a separately addr
 | Kernel segment | 22,342,066 bytes |
 | gzip recovery Ramdisk | 16,469,684 bytes, ~37.87 MB decompressed |
 | Existing recovery userland | `system/bin/recovery`, `system/bin/fastbootd`, 596 cpio entries |
-| Existing fstab | `system/etc/recovery.fstab` present |
-| Dynamic file systems | `system`, `vendor`, `odm`: EROFS, logical, slotselect and first-stage mount |
-| User data | ext4, `fileencryption=aes-256-xts:aes-256-cts:v2` |
-| Metadata | `/metadata` is provided by the physical `logdump` partition (do not repurpose it) |
+| Existing fstab | `system/etc/recovery.fstab` present; physical ext4 system/vendor (legacy) |
+| Dynamic file systems | **Not found in uploaded 4.9 recovery fstab**. Current Android17 ROM unverified. |
+| User data | ext4, `fileencryption=ice` in uploaded 4.9 fstab |
+| Metadata | **No /metadata fstab entry in uploaded 4.9 boot ramdisk**. Do not guess source. |
 | Verified Boot | AVB footer `AVBf` v1.0 present, embedded vbmeta location declared |
 
-These observations establish that the existing boot image already contains a **complete AOSP Recovery**. The goal is replacing or extending **recovery-mode userspace**, not manufacturing a new GPT bootloader entry. A new TWRP recovery image must correctly rebuild boot-header fields, images, and AVB footer; the padded 64 MiB region after the old Ramdisk is **not** a free licence to concatenate arbitrary images.
+These observations establish that the uploaded 4.9 boot image contains an **AOSP Recovery** (not proven identical to the 4.19 target). The goal is replacing or extending **recovery-mode userspace**, not manufacturing a new GPT bootloader entry. A new TWRP recovery image must correctly rebuild boot-header fields, images, and AVB footer; the padded 64 MiB region after the old Ramdisk is **not** a free licence to concatenate arbitrary images.
 
 ## Critical upstream compatibility limitation
 
