@@ -34,7 +34,7 @@ jobs:
           python3 -m py_compile scripts/normalize_enchilada_dtbs.py scripts/repack_ak3_rom_dtborder.py
           python3 scripts/repack_ak3_rom_dtborder.py original dist
           test -f dist/*_AK3_ROM_DTBORDER_9ad0027fcccb.zip
-          sha256sum -c dist/*_AK3_ROM_DTBORDER_9ad0027fcccb.zip.sha256
+          (cd dist && sha256sum -c *_AK3_ROM_DTBORDER_9ad0027fcccb.zip.sha256)
           unzip -tqq dist/*_AK3_ROM_DTBORDER_9ad0027fcccb.zip
           echo "Only ROM DTB order and ZIP release metadata changed. Not device-validated."
       - name: Upload OnePlus 6 ROM-order experimental AK3
