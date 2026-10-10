@@ -78,3 +78,28 @@ No mount strategy above should be described as 'stable on this device' until act
 - https://github.com/Enginex0/zeromount
 - https://kernelsu.org/guide/metamodule.html
 - https://github.com/Baka-SU/BakaSU
+
+## Verified results: static Runner and actual ROM boot IKCONFIG
+
+GitHub Actions [run #38045166197](https://github.com/Zhanfg/android_kernel_oneplus_sdm845/actions/runs/38045166197) concluded **SUCCESS**. The runner fetched all four exact pinned upstream source revisions, verified shell syntax for selected metamount/installation scripts, confirmed config-level OverlayFS and TMPFS ACL->XATTR, and uploaded artifact `enchilada-419-metamodule-static-audit`. **This was NOT a kernel/module execution, boot or stability test.**
+
+The user-provided **original** Android 17 `boot.img` was independently unpacked locally, without modifications (SHA256 `6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e`, file size 67108864, Boot Header page size 4096, packed kernel 22342066 bytes). Its Linux gzip kernel contains a valid embedded `IKCFG_ST` configuration archive. Extracted **actual ROM config**:
+
+```text
+CONFIG_OVERLAY_FS=y
+CONFIG_TMPFS=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_TMPFS_XATTR=y
+CONFIG_KEYS=y
+CONFIG_F2FS_FS=y
+CONFIG_EXT4_FS=y
+CONFIG_CFI_CLANG=y
+CONFIG_LTO_CLANG=y
+CONFIG_SECURITY_SELINUX=y
+CONFIG_MODULES=y
+# CONFIG_KPROBES is not set
+```
+
+`CONFIG_NOMOUNT`, `CONFIG_HYBRIDMOUNT`, and `CONFIG_KSU` **do not appear in the original ROM config**. Thus ROM meets keyring and OverlayFS kernel prerequisites, but the user has not yet booted our experimental BakaSU kernel nor executed any metamodule on it. Do not confuse original ROM config with the actual `CONFIG_KSU` enabled in a rebuilt AK3.
+
+**Important limit on official Meta OverlayFS:** its published reference uses modern `fsconfig` new mount APIs introduced upstream in Linux 5.2; they are not automatically available on Linux 4.19. Do not rank a modern-only distribution as plug-and-play without verifying a legacy `mount(2)` fallback or proving that the ROM backported the new mount API.
