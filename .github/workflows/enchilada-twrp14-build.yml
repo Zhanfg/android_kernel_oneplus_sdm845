@@ -73,7 +73,7 @@ jobs:
           df -h .
           sudo rm -rf /usr/local/lib/android /usr/local/share/powershell /usr/share/dotnet /opt/ghc /opt/hostedtoolcache || true
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends git git-lfs curl python3 lz4 lzop zstd liblz4-tool libxml2-utils bc bison flex build-essential zip unzip rsync libssl-dev libncurses5-dev libncurses-dev libelf-dev ccache
+          sudo apt-get install -y -qq --no-install-recommends git git-lfs curl python3 lz4 lzop zstd liblz4-tool libxml2-utils bc bison flex build-essential zip unzip rsync libssl-dev libncurses-dev libelf-dev ccache
           df -h .
       - name: Initialize pinned AOSP 14-based TWRP manifest
         shell: bash
