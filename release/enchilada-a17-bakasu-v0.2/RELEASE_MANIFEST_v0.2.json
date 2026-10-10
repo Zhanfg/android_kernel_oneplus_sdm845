@@ -1,0 +1,23 @@
+{
+  "release": "v0.2-safety",
+  "device": "enchilada",
+  "boot_header": 1,
+  "kernel": "Linux 4.19.325-cip136 / BakaSU 5b76b884c75f729a220bb317aa4a4fc78f0e0e9c",
+  "kernel_sha256": "c25575de7214f81d8904c2d6249c851436f2837ed6192c1904f51ef7e0963a4a",
+  "rom_ramdisk_sha256": "76d6462b5873d34a8908a679cdcac964d28c96dc4b28c53dba9db0a411ebb279",
+  "fdt_sha256_in_rom_order": [
+    "341e34eb0dae79a33a4b2a5cb89cb1f2fb2209d9d17d98f2d04d2551f46c9b11",
+    "da668c914c0db8d8a52917070bfa370dd3208846f731aead4d72b3324b846298",
+    "86638511847918077c2647a125991c03d46e2ecac66f65605c4ddb449774013c"
+  ],
+  "previous_user_reported_boot_success": true,
+  "ak3_v02_phone_flashing_verified": false,
+  "do_not_use_stock_recovery_sideload": true,
+  "build_inputs_private": true,
+  "ak3_mode": "flashes user-boot-tested 64MiB boot image byte-for-byte only on exact allowed ROM baseline",
+  "artifacts_sha256": {
+    "OnePlus6_A17_BakaSU_4.19.325_v0.2_AK3_GUARDED_UNTESTED.zip": "612bdd3924ab810bcb2c64ca95d9fb53610ff17a10b7086d7ba0ce0aac059026",
+    "OnePlus6_A17_BakaSU_4.19.325_v0.2_BOOT_USER_TESTED.img": "c763d08e6b686ffbcac3f3730fdf98e0a290c39662fef366369d2cb8255ee432",
+    "OnePlus6_A17_ORIGINAL_BOOT_ROLLBACK.img": "6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e"
+  }
+}

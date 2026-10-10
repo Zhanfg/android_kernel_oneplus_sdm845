@@ -1,0 +1,48 @@
+name: OnePlus 6 v0.2 Safe Release (No Vendor Boot Upload)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release/enchilada-a17-bakasu-v0.2-safe
+    paths:
+      - 'release/enchilada-a17-bakasu-v0.2/**'
+      - '.github/workflows/enchilada-v02-guards.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  static-release-check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check release Python, installer safety contract and POSIX shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release/enchilada-a17-bakasu-v0.2
+          python3 -W error::SyntaxWarning -m py_compile build_release.py ci_test_release.py test_release.py
+          python3 ci_test_release.py
+          sh -n OP6_PostFlash_Smoke_ReadOnly.sh
+      - name: Verify public manifest and protected private binary boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, re
+          p=pathlib.Path('release/enchilada-a17-bakasu-v0.2')
+          meta=json.loads((p/'RELEASE_MANIFEST_v0.2.json').read_text())
+          assert meta['release']=='v0.2-safety'
+          assert meta['ak3_v02_phone_flashing_verified'] is False
+          assert meta['previous_user_reported_boot_success'] is True
+          for name,h in meta['artifacts_sha256'].items():
+              assert re.fullmatch('[0-9a-f]{64}', h),name
+          forbidden=list(p.glob('*.img'))+list(p.glob('*.zip'))
+          assert not forbidden, forbidden
+          print('PASS: no private ROM Boot image, flashable binary or proprietary Ramdisk in Git')
+          print('PASS: manifest claims distinguish user boot report from untested AK3 installer')
+          PY
