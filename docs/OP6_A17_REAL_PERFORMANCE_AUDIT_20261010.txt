@@ -1,0 +1,74 @@
+OnePlus 6 · Snapdragon 845 · Linux 4.19.325
+Android 16 实机到 Android 17 ROM 的真实性能优化工程审计
+日期：2026-10-10
+性质：基于此前诊断日志与内核/ROM 上游源码的工程结论；没有声称完成真机优化或性能提升。
+
+一、总体结论
+性能目标不是峰值 CPU/GPU 频率最大化，而是同样工作量下：
+1. 更低的应用启动时间、交互 p95/p99 和掉帧率；
+2. 10～15 分钟后更小的性能衰减；
+3. 同一任务完成时更低的能耗；
+4. 更少的进程重启、后台唤醒、冷页回收与存储卡顿。
+稳定性红线：不禁用温控、不锁常驻大核/GPU、不绕开 SELinux、不修改 UFS 供电时序、不升高充电电流或电压。
+
+二、既有设备事实（Android 16 真机，不代表新 ROM）
+此前 OP6_PowerPolicy_v5 诊断已证实：
+- CPU 小核 4 个，允许上限 1.7664 GHz；大核 4 个，允许上限 2.8032 GHz；调速器 schedutil。
+- Adreno 630 允许上限 710 MHz，低负载实际 257 MHz 是 DVFS 正常现象。
+- 初期曾出现降低的最大频率和 performance 调速器，后来恢复；不能当作永久硬件缺陷。
+- ZRAM LZ4，约 6.88 GiB，压缩比曾约 2.43:1；内存压力快照较低。
+- CPU PSI 有争用信号，但缺少与应用场景绑定的帧时间记录，未找到确定的瓶颈。
+- 运行 Lineage libperfmgr AIDL Power HAL 与 Qualcomm Thermal HAL，存在对 GPU/CPU/内存带宽等节点的策略写入。
+原设备日志有时电池约 40℃，因此需要控制环境温度与电量进行比较。
+
+三、源码审核（LineageOS SDM845-common 分支，仅作 ROM donor 参考）
+参考上游：LineageOS/android_device_oneplus_sdm845-common lineage-23.2，2026-10-07 commit 07a63c51458f。
+内核基线：awa-xaga/android_kernel_oneplus_sdm845 lineage-23.2-4.19，2026-09-30 commit 366654798a2f。
+1. configs/powerhint.json：LAUNCH 的多项动作设为 Duration=5000 毫秒，包括 GPUForceClkOn、GPUForceRailOn、GPUIdleTimer、SchedBoost 和 PMQoSCpuDmaLatency。连续启动应用时可能存在多余的高性能驻留开销，应通过 A/B 确认，不能仅凭配置宣称有问题。
+2. INTERACTION 的若干动作 Duration=0，按 libperfmgr 语义需要正确结束；必须追踪 Begin/End 或内核节点恢复。不能将其理解为 0 毫秒。
+3. init/init.qcom.power.rc：CPU 调速器 schedutil；up_rate_limit_us 500、down_rate_limit_us 20000；运行时 cpuset background 0-1、system-background 0-3；旧 cgroup/schedtune 规则迁入 Android 17 时不可机械复制。
+4. 同一 init 中存在开机 CFQ I/O 调度器设置、UFS 早期关闭与稍后恢复省电、运行时 swappiness=100。应先核对最终 sysfs 状态、PSI 和 UFS 尾延迟，不可从一个静态值直接断言错误。
+5. Kernel 有 WALT、schedtune、PSI、ZRAM、F2FS、EROFS、UFS devfreq、KGSL。无需重复移植名称相同的子系统；缺乏端到端测试的 LZ4KD、ZRAM dedup、BBRv3/MGLRU 移植不能默认加入稳定线。
+
+四、按真实收益和风险排序
+P0：单一 Power HAL 策略所有者（最高优先级）
+- AOSP17 上只保留一个 Power HAL 对频率、QoS 与带宽路径作决策；移除重复的 Root 调频脚本及重复写同一节点的服务。
+- 提供 Balanced、Responsive、Sustained、Battery 模式，但各自使用有限时长或配对取消的 Hint；禁止长期 GPU force rail/clock on。
+- A/B 方案：保持其余动作不动，只将 LAUNCH 的 GPU 强制时钟/供电和 QoS 请求从 5000ms 拆为 2500ms 的实验候选，逐一测试后再判断是否采纳。2500ms 是实验变量，不是已经确认的最优值。
+- 功耗、启动时间和丢帧三者同时过门槛才能合并，单一跑分提升不能过关。
+P0：交互调度和功耗态协同
+- 保留 schedutil + WALT，CPUFreq 允许上限不变；观察 big/little 利用率、schedtune/cpuset、核心停泊和恢复延迟。
+- 对当前后台 cpuset 0-1 的来源和实际负荷分布做验证；候选 0-3 只在后台队列延迟成为瓶颈时 A/B，不强推。
+- 观察 GPUBusy、Perfetto FrameTimeline，确认 GPU 渲染路径和 HWC/gralloc/KGSL 版本兼容；不用单纯提高 GPU 最低频率解决卡顿。
+P1：内存回收与应用留存
+- 保留 ZRAM LZ4 与已启用的 PSI，先采集 pswpin/pswpout、pgmajfault、refault、lmkd kill 和内存 PSI。
+- 仅在读写放大、卡顿与回收压力关联时才比较 8GB/6GB 设备的 ZRAM 大小与 LMKD 参数。
+- AOSP17 cgroup v2 memory.swap.max 当前旧内核缺失；相关 Memory Limiter 功能必须禁用或者严谨回移植并压力测试。
+P1：UFS/F2FS 与 I/O 尾延迟
+- 先确认实际的 /sys/block/sda 与 sdf queue/scheduler、nr_requests、UFS clock scaling 和 hibern8 状态。
+- 用同一批 app cold start / install / 4GiB 文件校验任务观察耗时与 I/O PSI p95；不是看到 CFQ、BFQ 名称就切换。
+- 保留 F2FS 设备数据、加密与恢复兼容。严禁关闭 FUA/fsync 或破坏写入持久性换取成绩。
+P1：持续负载与休眠
+- 10～15 分钟游戏或图形渲染，分前 2 分钟与后 2 分钟记录吞吐、帧时间与热区。
+- 重点处理长期锁 CPU/GPU/L3/DDR 的提示和阻止进入低功耗态的 wakelock；允许正常 thermal throttling。
+- 测试屏幕关闭 4～6 小时的相同网络/同步条件，不以瞬时 current_now 代替能耗。
+P2：安全与驱动小补丁
+- 精确移植修复 kgsl/qcacld-3.0/UFS/触控/音频的已证实 BUG。不得使用不同 SoC 现成驱动包整体替换。
+- 不把 Root 后端、SUSFS、NoMount、调度器新功能一次合入，否则无法归因性能回归。
+
+五、测量与放行标准
+必备：真实 OnePlus 6 目标 ROM 安全启动（保留原 boot.img 回滚），SELinux enforcing，硬件功能无回归。
+测量：在同一充电状态、温度差尽量小于 2°C、相同亮度/刷新率/网络/应用版本条件下，各策略运行至少 5 次。
+指标：app 冷/热启动时间；Perfetto FrameTimeline p50/p95/p99 和 jank%；CPU/GPU 帧渲染瓶颈；能量/完成工作量；PSI；OOM/kill；UFS I/O 延迟；10 分钟稳定性曲线。
+高阶分析：使用配对 A/B 差值和中位数，不把 CPU 频率降低自动解读为节能，也不把 CPU 频率升高自动解读为提速。
+回归闸门：不能有新的内核 oops、mount/refcount error、设备卡死、充电与温控异常、加密数据损坏或显著待机耗电增长。
+
+六、已实现的工具
+OP6_RealPerf_AB_v1.sh：Android 手机 SH，无参数，只读；提供约 75 秒快速采样和约 12 分钟持续采样，日志写 Download（失败时落临时目录）。三个阶段为 IDLE、ACTIVE、RECOVERY；应用测试步骤需人工保持一致。
+OP6_RealPerf_Compare_v1.py：对成对日志计算两个阶段的频率/压力/热趋势和 Swap/缺页计数变化，明确不把 PSI 等同 FPS。
+OP6_PowerHint_Audit_v1.py：只读静态校验 powerhint.json 的 Action/Node/Duration/重置配置，标记潜在过长 GPU rail/clock hint 和未结束的 INTERACTION。
+这三者是诊断与优化审核工具，不是自动超频或性能增强模块。它们运行成功并不证明性能已经提升。
+
+七、下一步决策
+当前无需额外的性能模块或刷机操作。优先建立一组原始 ROM/Root-only 相同工作负载的读数，并把 Perfetto FrameTimeline 作为真正的交互性能验收；只对已确认的策略所有权和 Boost 生命周期异常进行单变量修复。
+根据 A/B 数据，选择首个可以量化收益且不损害稳定性的候选改动，再开启内核或 Power HAL 专项 PR。未经真机验证不得标注 Stable。

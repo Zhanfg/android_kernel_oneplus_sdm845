@@ -1,0 +1,58 @@
+name: OnePlus 6 Real Performance Host Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/enchilada-419-realperf-20261010
+    paths:
+      - 'tools/perf/**'
+      - '.github/workflows/enchilada-realperf.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  host-check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate POSIX shell and Python scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n tools/perf/OP6_RealPerf_AB_v1.sh
+          python3 -m py_compile tools/perf/OP6_RealPerf_Compare_v1.py tools/perf/OP6_PowerHint_Audit_v1.py
+      - name: Test policy inspector and log schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util, tempfile
+          from pathlib import Path
+          a = Path('tools/perf/OP6_PowerHint_Audit_v1.py')
+          b = Path('tools/perf/OP6_RealPerf_Compare_v1.py')
+          def module(path):
+              spec = importlib.util.spec_from_file_location(path.stem, path)
+              mod = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(mod)
+              return mod
+          p = module(a)
+          c = module(b)
+          j=p.relaxed_json('{"Nodes":[{"Name":"GPUForceRailOn","Path":"/sys/test","Values":["1",],},],"Actions":[{"PowerHint":"LAUNCH","Node":"GPUForceRailOn","Value":"1","Duration":5000,}]}')
+          errors,warnings=p.audit(j)
+          assert not errors and any('prolonged' in msg for msg in warnings), (errors,warnings)
+          assert len(c.COLUMNS) == 29
+          with tempfile.TemporaryDirectory() as d:
+              pp=Path(d)/'a.txt'
+              data=['IDLE','1','1']+['0']*(len(c.COLUMNS)-3)
+              pp.write_text('META|format|pipe-delimited-v1\\nDATA|'+'|'.join(data)+'\\nCOMPLETE|/tmp/a.txt\\n')
+              meta,rows=c.load(pp)
+              assert len(rows)==1 and rows[0]['phase']=='IDLE'
+          print('PASS: no-invalid-policy, warning emitted, schema 29 cols, synthetic log parsed')
+          PY
+      - name: Emit verification boundary
+        run: |
+          echo "HOST CI PASSED: source syntax and synthetic tests only."
+          echo "No real OnePlus 6 benchmark, ROM boot, energy or frame-time gain has been verified."
