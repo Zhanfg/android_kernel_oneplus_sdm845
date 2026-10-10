@@ -4,7 +4,9 @@
 
 ## Bottom line
 
-> **CORRECTION (2026-10-10, actual uploaded image re-parsed):** The uploaded 64 MiB boot.img SHA-256 is **6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e**, with **Linux 4.9.337** (NOT Linux 4.19.325). The Ramdisk's first_stage_ramdisk/system/etc/fstab.qcom and system/etc/recovery.fstab both contain physical ext4 system/vendor and **fileencryption=ice** for userdata (NOT EROFS logical or FBEv2). Three 4.9 FDTs do **not** byte-match the independent 4.19.325 BakaSU CI FDTs. Android17 target live partition layout is **UNCONFIRMED**. Earlier report assertions to the contrary are withdrawn; no boot image match or current ROM readiness claim can be made from this upload. For source port see PR #6, using separate 4.19 kernel and explicit layout selection.\n\n
+> **CORRECTION (2026-10-10, actual uploaded image re-parsed):** The uploaded 64 MiB boot.img SHA-256 is **6b305cace01270c797c7ad44a1457154ec91667227ce1e4b35be49156d940a0e**, with **Linux 4.9.337** (NOT Linux 4.19.325). The Ramdisk's first_stage_ramdisk/system/etc/fstab.qcom and system/etc/recovery.fstab both contain physical ext4 system/vendor and **fileencryption=ice** for userdata (NOT EROFS logical or FBEv2). Three 4.9 FDTs do **not** byte-match the independent 4.19.325 BakaSU CI FDTs. Android17 target live partition layout is **UNCONFIRMED**. Earlier report assertions to the contrary are withdrawn; no boot image match or current ROM readiness claim can be made from this upload. For source port see PR #6, using separate 4.19 kernel and explicit layout selection.
+
+
 The stock SDM845 A/B bootloader uses **Recovery-as-Boot**, not a separately addressable GPT `recovery` partition. Retrofit dynamic partitions are distinct from A/B: they expose logical system/vendor/odm devices through Linux device mapper, not a new bootloader-loadable recovery image.
 
 **Viable**: independent full TWRP recovery *environment* (GUI/ADB/fastbootd), booting through existing `boot_a` / `boot_b` in recovery mode and sharing an unchanged tested Linux 4.19 kernel and root integration.
