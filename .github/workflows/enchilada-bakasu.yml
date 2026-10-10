@@ -1,0 +1,59 @@
+name: OnePlus 6 Android 17 BakaSU experimental
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/enchilada-a17-bakasu-manual-hook
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Linux 4.19 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex build-essential \
+            libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi device-tree-compiler cpio
+      - name: Integrate pinned BakaSU
+        run: sh scripts/setup-bakasu.sh
+      - name: Prepare Enchilada kernel config
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
+          ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+      - name: Build Image.gz-dtb and device trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make -j4 "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb dtbs
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          mkdir -p dist
+          cp out/arch/arm64/boot/Image.gz-dtb out/.config dist/
+          find out/arch/arm64/boot/dts -name '*.dtbo' -type f -exec cp --parents '{}' dist/ \;
+          (cd dist && sha256sum Image.gz-dtb .config > SHA256SUMS)
+      - name: Upload build-only artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: enchilada-a17-bakasu-4.19-build-only
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
