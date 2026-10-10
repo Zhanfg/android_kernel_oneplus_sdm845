@@ -1,0 +1,8 @@
+# Experimental retrofit dynamic partition variant - NEVER auto-select without device fstab proof.
+# On this platform androidboot.super_partition=system; bootloader does not load logical recovery.
+# Source paths shown as existing GPT backing devices; dm mappings resolve via first_stage_init.
+/dev/block/by-name/system /system erofs ro,discard wait,slotselect,logical,first_stage_mount
+/dev/block/by-name/vendor /vendor erofs ro,discard wait,slotselect,logical,first_stage_mount
+/dev/block/by-name/odm /odm erofs ro,discard wait,slotselect,logical,first_stage_mount
+/dev/block/bootdevice/by-name/userdata /data ext4 noatime,nosuid,nodev,discard wait,check,fileencryption=aes-256-xts:aes-256-cts:v2,quota
+/dev/block/bootdevice/by-name/misc /misc emmc defaults defaults

@@ -1,0 +1,117 @@
+name: OnePlus 6 Android 17 TWRP 14 Port Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      partition_layout:
+        description: 'Experimental fstab: original 4.9 legacy, or unverified Android17 retrofit'
+        required: true
+        type: choice
+        default: legacy
+        options:
+          - legacy
+          - retrofit
+  push:
+    branches:
+      - feature/enchilada-a17-twrp-port
+    paths:
+      - 'recovery/**'
+      - '.github/workflows/enchilada-twrp14-build.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: enchilada-twrp14-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      TWRP_LAYOUT: ${{ inputs.partition_layout || 'legacy' }}
+    steps:
+      - name: Checkout Recovery source only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            recovery
+            .github/workflows/enchilada-twrp14-build.yml
+          sparse-checkout-cone-mode: true
+      - name: Host preflight - prevent unsafe fstab and wrong boot ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -v -s recovery/tests
+          python3 recovery/tools/check_port.py --root recovery
+          bash -n recovery/tools/build_4_19_twrp_ci.sh
+      - name: Download immutable BakaSU 4.19 kernel artifact (no kernel rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          name: enchilada-a17-bakasu-ak3-rom-dtb-order-experimental
+          repository: Zhanfg/android_kernel_oneplus_sdm845
+          run-id: 38047144934
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: donor
+      - name: Extract and validate BakaSU 4.19 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovery/device/oneplus/enchilada/prebuilt
+          mapfile -t zips < <(find donor -name '*_AK3_ROM_DTBORDER_*.zip' -type f)
+          test "${#zips[@]}" -eq 1
+          unzip -p "${zips[0]}" Image.gz-dtb > recovery/device/oneplus/enchilada/prebuilt/Image.gz-dtb
+          python3 recovery/tools/check_port.py --root recovery --kernel recovery/device/oneplus/enchilada/prebuilt/Image.gz-dtb
+          sha256sum recovery/device/oneplus/enchilada/prebuilt/Image.gz-dtb > recovery-donor-kernel.sha256
+      - name: Prepare build host (use ample disk, do not touch device)
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h .
+          sudo rm -rf /usr/local/lib/android /usr/local/share/powershell /usr/share/dotnet /opt/ghc /opt/hostedtoolcache || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends git git-lfs curl python3 lz4 lzop zstd liblz4-tool libxml2-utils bc bison flex build-essential zip unzip rsync libssl-dev libncurses5-dev libncurses-dev libelf-dev ccache
+          df -h .
+      - name: Initialize pinned AOSP 14-based TWRP manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/bin" "$RUNNER_TEMP/twrp"
+          curl -fsSL --retry 3 https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/bin/repo"
+          chmod 0755 "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          cd "$RUNNER_TEMP/twrp"
+          "$HOME/bin/repo" init --depth=1 -u https://github.com/nebrassy/platform_manifest_twrp_aosp.git -b twrp-14 --no-repo-verify
+          "$HOME/bin/repo" manifest -o "$GITHUB_WORKSPACE/twrp-resolved.xml"
+      - name: Sync minimal TWRP 14 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/twrp"
+          repo sync -c -j4 --no-tags --no-clone-bundle --fail-fast
+          df -h .
+      - name: Compile TWRP bootimage for enchilada (legacy fstab only on push)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TWRP_ROOT="$RUNNER_TEMP/twrp"
+          export DEVICE_TREE_DIR="$GITHUB_WORKSPACE/recovery/device/oneplus/enchilada"
+          bash recovery/tools/build_4_19_twrp_ci.sh
+          test -s "$TWRP_ROOT/out/target/product/enchilada/boot.img"
+          python3 recovery/tools/check_port.py --root recovery --kernel recovery/device/oneplus/enchilada/prebuilt/Image.gz-dtb --boot "$TWRP_ROOT/out/target/product/enchilada/boot.img"
+          mkdir -p dist
+          cp "$TWRP_ROOT/out/target/product/enchilada/boot.img" dist/OnePlus6_TWRP14_4.19_BakaSU_FASTBOOT_BOOT_UNVERIFIED.img
+          cp recovery-donor-kernel.sha256 dist/
+          sha256sum dist/* > dist/sha256sums.txt
+          printf 'EXPERIMENTAL FASTBOOT-BOOT TEST IMAGE ONLY. Do not flash. No on-device validation.\nBuild fstab variant: %s\nKernel donor: 38047144934\nTWRP source: nebrassy/twrp-14.\n' "$TWRP_LAYOUT" > dist/READ_ME_FIRST.txt
+      - name: Upload recovery experiment and source-build report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enchilada-twrp14-4.19-bakasu-fastbootboot-UNVERIFIED
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error

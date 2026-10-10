@@ -1,0 +1,4 @@
+# TWRP flags: no system/vendor/boot backup/flash by default until layout validated.
+/boot emmc /dev/block/bootdevice/by-name/boot flags=slotselect;backup=0;display="Boot (test only)"
+/data ext4 /dev/block/bootdevice/by-name/userdata flags=storage;backup=0;display="Encrypted data - unsupported"
+/misc emmc /dev/block/bootdevice/by-name/misc flags=backup=0

@@ -1,0 +1,7 @@
+# Minimal init actions; no dynamic partition writes, no backup/erase.
+on post-fs
+    mkdir /metadata 0700 root root
+    mkdir /storage/usbotg 0775 root root
+
+on boot
+    setprop ro.recovery.device enchilada
