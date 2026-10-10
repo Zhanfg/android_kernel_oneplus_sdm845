@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A new build replaces earlier builds started with this revised workflow.
+concurrency:
+  group: enchilada-a17-bakasu-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   kernel:
     runs-on: ubuntu-22.04
@@ -23,15 +28,31 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends bc bison flex build-essential \
-            libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu \
+            libssl-dev libelf-dev clang lld llvm ccache gcc-aarch64-linux-gnu \
             gcc-arm-linux-gnueabi device-tree-compiler cpio
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: enchilada-clang-ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            enchilada-clang-ccache-${{ runner.os }}-
+      - name: Enable bounded compiler cache
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.ccache"
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+          ccache --max-size=1500M
+          ccache --zero-stats
       - name: Integrate pinned BakaSU
         run: sh scripts/setup-bakasu.sh
       - name: Prepare Enchilada kernel config
         shell: bash
         run: |
           set -euo pipefail
-          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC='ccache clang' LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
           make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
           sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
           make "${MAKE_ARGS[@]}" olddefconfig
@@ -39,14 +60,24 @@ jobs:
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
           grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
           ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
-      - name: Build Image.gz-dtb and device trees
+      - name: Build and verify device trees before kernel image
         shell: bash
         run: |
           set -euo pipefail
-          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
-          make -j4 "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb dtbs
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC='ccache clang' LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          JOBS=$(nproc)
+          echo "Compiling with ${JOBS} workers on $(nproc) available logical CPUs"
+          # Avoid racing Image.gz-dtb against DTB compilation; the old
+          # Makefile discovers appended DTBs from already-built files.
+          time make -j"${JOBS}" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs
+          test -s out/arch/arm64/boot/dts/qcom/sdm845.dtb
+          test -s out/arch/arm64/boot/dts/qcom/sdm845-v2.dtb
+          test -s out/arch/arm64/boot/dts/qcom/sdm845-v2.1.dtb
+          time make -j"${JOBS}" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/.config
+          python3 scripts/verify-appended-dtbs.py out/arch/arm64/boot/Image.gz-dtb
+          ccache --show-stats
       - name: Package pinned AnyKernel3
         shell: bash
         run: |
