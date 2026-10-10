@@ -46,14 +46,17 @@ jobs:
           MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
           make -j4 "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb dtbs
           test -s out/arch/arm64/boot/Image.gz-dtb
-          mkdir -p dist
-          cp out/arch/arm64/boot/Image.gz-dtb out/.config dist/
-          find out/arch/arm64/boot/dts -name '*.dtbo' -type f -exec cp --parents '{}' dist/ \;
-          (cd dist && sha256sum Image.gz-dtb .config > SHA256SUMS)
-      - name: Upload build-only artifacts
+          test -s out/.config
+      - name: Package pinned AnyKernel3
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/package-ak3.sh
+          unzip -tqq dist/*_EXPERIMENTAL_*.zip
+      - name: Upload experimental AK3 artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: enchilada-a17-bakasu-4.19-build-only
+          name: enchilada-a17-resukisu-bakasu-ak3-experimental
           path: dist/
           if-no-files-found: error
           retention-days: 7

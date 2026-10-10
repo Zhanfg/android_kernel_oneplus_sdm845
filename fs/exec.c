@@ -1728,6 +1728,12 @@ static int exec_binprm(struct linux_binprm *bprm)
 /*
  * sys_execve() executes a new program.
  */
+#ifdef CONFIG_KSU_MANUAL_HOOK
+extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
+				    void *argv, void *envp, int *flags,
+				    int *retval);
+#endif
+
 static int __do_execve_file(int fd, struct filename *filename,
 			    struct user_arg_ptr argv,
 			    struct user_arg_ptr envp,
@@ -1866,6 +1872,12 @@ static int __do_execve_file(int fd, struct filename *filename,
 	task_numa_free(current, false);
 	free_bprm(bprm);
 	kfree(pathbuf);
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	/* Keep filename alive until the post-exec hook has finished. */
+	if (filename)
+		ksu_handle_post_execveat(&fd, &filename, &argv, &envp,
+					 &flags, &retval);
+#endif
 	if (filename)
 		putname(filename);
 	if (displaced)
@@ -1890,6 +1902,11 @@ out_files:
 	if (displaced)
 		reset_files_struct(displaced);
 out_ret:
+#ifdef CONFIG_KSU_MANUAL_HOOK
+	if (filename)
+		ksu_handle_post_execveat(&fd, &filename, &argv, &envp,
+					 &flags, &retval);
+#endif
 	if (filename)
 		putname(filename);
 	return retval;
@@ -1898,9 +1915,6 @@ out_ret:
 #ifdef CONFIG_KSU_MANUAL_HOOK
 extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
 			       void *argv, void *envp, int *flags);
-extern int ksu_handle_post_execveat(int *fd, struct filename **filename_ptr,
-				    void *argv, void *envp, int *flags,
-				    int *retval);
 #endif
 
 static int do_execveat_common(int fd, struct filename *filename,
@@ -1913,7 +1927,6 @@ static int do_execveat_common(int fd, struct filename *filename,
 
 	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
 	retval = __do_execve_file(fd, filename, argv, envp, flags, NULL);
-	ksu_handle_post_execveat(&fd, &filename, &argv, &envp, &flags, &retval);
 	return retval;
 #else
 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);

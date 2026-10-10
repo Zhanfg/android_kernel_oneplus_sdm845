@@ -6,6 +6,6 @@ This feature branch adds the documented manual hooks for stat, execveat, faccess
 
 BakaSU source is pinned at `5b76b884c75f729a220bb317aa4a4fc78f0e0e9c` (2026-10-09); `sh scripts/setup-bakasu.sh` adds a local `KernelSU/` checkout and connects `drivers/kernelsu` to its Kconfig/Makefile. These files are not vendored into the kernel tree. Run the setup again after a clean checkout, then merge the `sdm845-perf_defconfig` and `enchilada.config` when building.
 
-GitHub Actions workflow `Enchilada Android 17 BakaSU experimental` builds `Image.gz-dtb` with the device configuration and uploads a **build-only** artifact; it does not modify boot partitions or auto-flash. A successful build is not evidence of safe boot or Android 17 runtime compatibility. Do not flash this artifact directly as `boot.img`.
+GitHub Actions builds Image.gz-dtb, assembles a **test-only, manual-flash AnyKernel3 (AK3)** ZIP from a pinned upstream AnyKernel3 revision, verifies archive integrity and uploads ZIP + SHA256 + config + build metadata. The AK3 script replaces the active boot kernel only; it never flashes a standalone DTBO image. The ZIP is **experimental and not yet device-validated**. It is NOT a boot.img or a ROM ZIP.
 
 Before distributing a flashable ZIP, confirm ROM's kernel/DTBO and firmware ABI expectations, test boot with rollback available, and validate cellular, Wi-Fi, camera, fingerprint, charging and suspend. Keep the original ROM `boot.img` for rollback.
