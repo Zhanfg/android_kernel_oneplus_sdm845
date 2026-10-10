@@ -41,11 +41,17 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$GITHUB_WORKSPACE/.ccache"
-          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
-          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
-          echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+          # Set variables in THIS shell too, not only subsequent GITHUB_ENV steps.
+          # Without export, --max-size targets ~/.cache/ccache instead of .ccache.
+          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache"
+          export CCACHE_BASEDIR="$GITHUB_WORKSPACE"
+          export CCACHE_COMPILERCHECK=content
+          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$CCACHE_BASEDIR" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> "$GITHUB_ENV"
           ccache --max-size=1500M
           ccache --zero-stats
+          echo "Using $(ccache --get-config cache_dir) (max-size $(ccache --get-config max_size))"
       - name: Integrate pinned BakaSU
         run: sh scripts/setup-bakasu.sh
       - name: Prepare Enchilada kernel config
@@ -77,7 +83,14 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/.config
           python3 scripts/verify-appended-dtbs.py out/arch/arm64/boot/Image.gz-dtb
-          ccache --show-stats
+          mkdir -p dist
+          ccache --show-stats | tee dist/ccache-stats.txt
+          {
+            echo "ccache stats for run $GITHUB_RUN_ID"
+            echo "Kernel source commit: $GITHUB_SHA"
+            echo "Cache key restore prefix: enchilada-clang-ccache-${{ runner.os }}-"
+            echo "NOTE: LLVM LTO final linking is not accelerated by compiler object cache."
+          } > dist/cache-build-notes.txt
       - name: Package pinned AnyKernel3
         shell: bash
         run: |
