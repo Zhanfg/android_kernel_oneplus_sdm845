@@ -1,0 +1,83 @@
+name: Enchilada 4.19 Metamodule Compatibility Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/enchilada-a17-thirdparty-stability-20261010
+    paths:
+      - ".github/workflows/enchilada-metamodule-audit.yml"
+      - "docs/ENCHILADA_A17_METAMODULES_419.md"
+
+permissions:
+  contents: read
+
+jobs:
+  static-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout kernel baseline
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify kernel prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          {
+            echo "Linux 4.19 / Android 17 - metamodule STATIC AUDIT"
+            echo "Run: ${GITHUB_RUN_ID}"
+            echo "Kernel baseline SHA: ${GITHUB_SHA}"
+            echo ""
+            grep -qx 'CONFIG_OVERLAY_FS=y' arch/arm64/configs/vendor/sdm845-perf_defconfig
+            grep -qx 'CONFIG_TMPFS=y' arch/arm64/configs/vendor/sdm845-perf_defconfig
+            grep -qx 'CONFIG_TMPFS_POSIX_ACL=y' arch/arm64/configs/vendor/sdm845-perf_defconfig
+            grep -A 8 '^config TMPFS_POSIX_ACL' fs/Kconfig | grep -q 'select TMPFS_XATTR'
+            grep -qx 'CONFIG_EXT4_FS=y' arch/arm64/configs/vendor/sdm845-perf_defconfig
+            grep -qx 'CONFIG_SECURITY_SELINUX=y' arch/arm64/configs/vendor/sdm845-perf_defconfig
+            echo "PASS: source config declares OverlayFS, tmpfs, ACL->xattr, ext4, SELinux"
+            echo "WARNING: generated .config and Android runtime behavior were NOT checked"
+          } | tee dist/metamodule-static-audit.txt
+      - name: Verify pinned upstream scripts and BakaSU interface
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/meta-src
+          fetch_pinned() {
+            local name="$1" repo="$2" tag="$3" expected="$4" root="/tmp/meta-src/$1"
+            mkdir -p "$root"
+            git -C "$root" init -q
+            git -C "$root" remote add origin "https://github.com/$repo.git"
+            git -C "$root" fetch -q --depth 1 origin "refs/tags/$tag"
+            git -C "$root" checkout -q --detach FETCH_HEAD
+            test "$(git -C "$root" rev-parse HEAD)" = "$expected"
+            echo "PASS: $name source pinned to $expected" | tee -a dist/metamodule-static-audit.txt
+          }
+          fetch_pinned mountify backslashxx/mountify 204 df5d309802623432d49447ed0e5c5d28841ed60e
+          fetch_pinned mmrs Tools-cx-app/meta-magic_mount-rs v4.0.11 940ad260338751a676e86826e406df7a8e865c20
+          fetch_pinned hybrid Hybrid-Mount/meta-hybrid_mount v6.2.2 797fad08037204e89103a6ce8f36841c96de3d81
+          fetch_pinned nomount maxsteeel/nomount v2.1.0 c7f63e3feb4125d591b6969a33aac04feb40f8ba
+
+          sh -n /tmp/meta-src/mountify/module/post-fs-data.sh
+          sh -n /tmp/meta-src/mountify/module/customize.sh
+          sh -n /tmp/meta-src/mmrs/module/metamount.sh
+          sh -n /tmp/meta-src/mmrs/module/metainstall.sh
+          sh -n /tmp/meta-src/hybrid/module/metamount.sh
+          sh -n /tmp/meta-src/nomount/module/metamount.sh
+          grep -Eq 'notify-module-mounted' /tmp/meta-src/mmrs/module/metamount.sh
+          grep -q 'mountsource = "KSU"' /tmp/meta-src/mmrs/module/config.toml
+          grep -q 'CONFIG_OVERLAY_FS=y' /dev/null || true
+          grep -q '^config NOMOUNT' /tmp/meta-src/nomount/kernel/src/Kconfig
+          grep -q 'default_mode = "overlay"' /tmp/meta-src/hybrid/module/config.toml
+          echo "PASS: pinned module scripts pass POSIX sh parse, expected source interfaces present" | tee -a dist/metamodule-static-audit.txt
+          echo "UNTESTED: boot, overlay mount, SELinux xattr, MMRS ioctl on actual device, VFS RCU and runtime" | tee -a dist/metamodule-static-audit.txt
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: enchilada-419-metamodule-static-audit
+          path: dist/metamodule-static-audit.txt
+          retention-days: 30
