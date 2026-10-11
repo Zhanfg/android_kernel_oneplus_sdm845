@@ -5,7 +5,7 @@
  * Ported from kernel/patch/module/relo.c. Applies AArch64 RELA relocations to
  * a loaded KPM image. The encoder comes from insn.c.
  */
-#include "insn.h"
+#include "op6_insn.h"
 #include "op6_relo.h"
 
 #include <linux/elf.h>

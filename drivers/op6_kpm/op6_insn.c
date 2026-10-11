@@ -4,7 +4,7 @@
  *
  * Ported from kernel/patch/module/insn.c (aarch64_insn_encode_immediate only).
  */
-#include "insn.h"
+#include "op6_insn.h"
 
 #include <linux/bitops.h>
 #include <linux/printk.h>
