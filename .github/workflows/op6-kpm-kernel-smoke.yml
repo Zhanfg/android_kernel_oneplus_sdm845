@@ -11,6 +11,10 @@ on:
       - 'drivers/Makefile'
       - 'arch/arm64/configs/vendor/enchilada.config'
       - 'tools/op6_kpmctl.c'
+      - 'tools/check_op6_kernelpatch_snapshot.py'
+      - 'tools/sync_op6_kernelpatch.py'
+      - 'third_party/kernelpatch/**'
+      - 'extras/op6-kpm-webui/**'
       - '.github/workflows/op6-kpm-kernel-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -27,6 +31,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends bc bison flex clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libelf-dev
       - name: Check native UAPI and offline ELF preflight
         run: |
+          python3 tools/check_op6_kernelpatch_snapshot.py
+          python3 -m py_compile tools/sync_op6_kernelpatch.py tools/check_op6_kernelpatch_snapshot.py
+          test ! -e extras/op6-kpm-webui/service.sh
+          test ! -e extras/op6-kpm-webui/post-fs-data.sh
+          test -f extras/op6-kpm-webui/webroot/index.html
           cc -std=gnu11 -Wall -Wextra -Werror -o /tmp/op6-kpmctl tools/op6_kpmctl.c
           /tmp/op6-kpmctl 2>&1 | grep -q 'Usage:'
           python3 -m unittest discover -s tests -p 'test_op6_kpm_elf_preflight.py' -v
