@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends bc bison flex clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libelf-dev
       - name: Check native UAPI and offline ELF preflight
         run: |
-          cc -std=gnu11 -Wall -Wextra -Werror -Iinclude/uapi -o /tmp/op6-kpmctl tools/op6_kpmctl.c
+          cc -std=gnu11 -Wall -Wextra -Werror -o /tmp/op6-kpmctl tools/op6_kpmctl.c
           /tmp/op6-kpmctl 2>&1 | grep -q 'Usage:'
           python3 -m unittest discover -s tests -p 'test_op6_kpm_elf_preflight.py' -v
       - name: Prepare BakaSU v0.3 config and compile KPM driver
