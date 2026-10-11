@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# OnePlus 6 Android 17 display diagnostic. Read-only, no args, no root required.
+# OnePlus 6 Android 17 HDR readiness diagnostic. No HDR playback needed.
 # It does not force panel modes, HDR flags, refresh rates or brightness.
 PATH=/system/bin:/system/xbin:/vendor/bin:/product/bin:/sbin:$PATH
 DEST=/sdcard/Download
@@ -24,7 +24,7 @@ safe_command() {
 }
 
 {
-    echo "OnePlus 6 HDR / physical refresh / color capability PROBE"
+    echo "OnePlus 6 HDR readiness / physical refresh / color capability PROBE"
     echo "Read only. Unknown output is not proof of absent hardware capabilities."
     report "Device"
     for k in ro.product.device ro.product.model ro.build.version.sdk ro.build.id ro.boot.slot_suffix ro.hardware; do
@@ -32,6 +32,7 @@ safe_command() {
     done
     report "Kernel"
     uname -r
+    echo "No HDR playback is needed to run this probe."
 
     report "HDR Settings state (null = unset, not disabled)"
     for name in hdr_brightness_enabled hdr_brightness_boost_level; do
@@ -52,6 +53,22 @@ safe_command() {
     echo "Display.isHdrSdrRatioAvailable() must be checked by a framework API caller."
     echo "An HDR formats list alone does NOT enable HDR brightness settings."
 
+    report "Display/SurfaceFlinger properties"
+    for k in ro.surface_flinger.has_HDR_display ro.surface_flinger.has_wide_color_display ro.surface_flinger.use_color_management vendor.display.disable_hdr persist.sys.sf.color_mode; do
+        prop "$k"
+    done
+    report "Composer HAL and display configs"
+    for d in /vendor/etc/displayconfig /odm/etc/displayconfig /vendor/bin/hw /vendor/lib64/hw /odm/lib64/hw; do
+        [ -d "$d" ] || continue
+        echo "DIR: $d"
+        ls "$d" 2>/dev/null | grep -i -E "display|composer|hwc|gralloc|hdr|mapper|xml" | head -n 35 || :
+    done
+    report "Graphics Composer services"
+    if command -v service >/dev/null 2>&1; then
+        service list 2>/dev/null | grep -i -E "composer|SurfaceFlinger" | head -n 30 || :
+    fi
+    report "HDR brightness settings are NOT a master HDR toggle"
+    echo "Their availability additionally requires a valid HDR/SDR ratio."
     safe_command "Display service (prefer capability modes)" dumpsys display
     safe_command "SurfaceFlinger display capability snapshot" dumpsys SurfaceFlinger --displays
     report "SurfaceFlinger short mode and HDR output"
