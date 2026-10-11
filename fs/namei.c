@@ -522,6 +522,9 @@ struct nameidata {
 	struct inode	*link_inode;
 	unsigned	root_seq;
 	int		dfd;
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	unsigned int	state;
+#endif
 } __randomize_layout;
 
 static void set_nameidata(struct nameidata *p, int dfd, struct filename *name)
@@ -529,6 +532,9 @@ static void set_nameidata(struct nameidata *p, int dfd, struct filename *name)
 	struct nameidata *old = current->nameidata;
 	p->stack = p->internal;
 	p->dfd = dfd;
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	p->state = 0;
+#endif
 	p->name = name;
 	p->total_link_count = old ? old->total_link_count : 0;
 	p->saved = old;
@@ -1658,6 +1664,17 @@ retry:
 		dput(dentry);
 		dentry = old;
 	}
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	if (dentry && !IS_ERR(dentry) && dentry->d_inode &&
+	    !found_sus_path && susfs_is_inode_sus_path(dentry->d_inode)) {
+		if (d_in_lookup(dentry))
+			d_lookup_done(dentry);
+		dput(dentry);
+		dentry = d_alloc(base, &susfs_fake_qstr_name);
+		found_sus_path = true;
+		goto retry;
+	}
+#endif
 	return dentry;
 }
 
@@ -3689,7 +3706,7 @@ static int do_o_path(struct nameidata *nd, unsigned flags, struct file *file)
 {
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 	int old_dfd = nd->dfd;
-	bool is_nd_state_root_preset = (nd->state & ND_ROOT_PRESET);
+	bool is_nd_state_root_preset = (nd->flags & LOOKUP_ROOT);
 	struct filename *fake_filename = NULL;
 #endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 	struct path path;
@@ -3729,7 +3746,7 @@ static struct file *path_openat(struct nameidata *nd,
 {
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 	int old_dfd = nd->dfd;
-	bool is_nd_state_root_preset = (nd->state & ND_ROOT_PRESET);
+	bool is_nd_state_root_preset = (nd->flags & LOOKUP_ROOT);
 	struct filename *fake_filename = NULL;
 	struct filename *old_name = nd->name;
 #endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
