@@ -43,6 +43,7 @@ extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
 extern bool susfs_is_inode_sus_path(struct inode *inode);
 extern const struct qstr susfs_fake_qstr_name;
 extern struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
+struct mount;
 extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
 extern struct vfsmount *susfs_get_non_sus_vfsmnt_from_vfsmnt(struct vfsmount *mnt);
 #endif

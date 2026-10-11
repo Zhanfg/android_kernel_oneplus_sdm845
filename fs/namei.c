@@ -3695,10 +3695,8 @@ out2:
 	mnt_drop_write(path.mnt);
 out:
 	path_put(&path);
-#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-	if (fake_filename && !IS_ERR(fake_filename))
-		putname(fake_filename);
-#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	/* O_TMPFILE creates a new unnamed inode, not an existing redirect
+	 * target. Redirect lookup stays in the path-based open flow. */
 	return error;
 }
 
@@ -3744,12 +3742,9 @@ static int do_o_path(struct nameidata *nd, unsigned flags, struct file *file)
 static struct file *path_openat(struct nameidata *nd,
 			const struct open_flags *op, unsigned flags)
 {
-#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
-	int old_dfd = nd->dfd;
-	bool is_nd_state_root_preset = (nd->flags & LOOKUP_ROOT);
-	struct filename *fake_filename = NULL;
-	struct filename *old_name = nd->name;
-#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	/* Linux 4.19 redirects the resolved path only where a referenced
+	 * filename and dentry are available; 5.15's unused locals do not
+	 * provide valid lifetime management here. */
 	struct file *file;
 	int error;
 
