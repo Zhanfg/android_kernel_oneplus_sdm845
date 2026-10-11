@@ -86,7 +86,7 @@ def main() -> int:
 
     bakasu = read("third_party/susfs/bakasu-pinned-Kconfig.txt")
     conf = read("arch/arm64/configs/vendor/enchilada.config")
-    choice = re.search(r"(?ms)^choice\\b(.*?)^endchoice\\b", bakasu)
+    choice = re.search(r"(?ms)^choice\b(.*?)^endchoice\b", bakasu)
     if not choice:
         record("ERROR", "Pinned BakaSU hook-choice declaration could not be verified")
     else:
