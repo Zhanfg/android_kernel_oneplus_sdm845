@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="light dark"><title>OP6 内核 KPM 管理</title>
+<style>
+:root{font-family:Roboto,"Noto Sans SC",system-ui,sans-serif;color-scheme:light dark;--surface:#faf9ff;--card:#eceef5;--fg:#1b1c22;--sub:#515463;--line:#b8bfcc;--accent:#415c9c}
+@media(prefers-color-scheme:dark){:root{--surface:#12141b;--card:#222630;--fg:#e2e3f1;--sub:#c0c6d7;--line:#555d6b;--accent:#afc5ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--surface);color:var(--fg);padding:max(20px,env(safe-area-inset-top)) 20px max(30px,env(safe-area-inset-bottom))}
+main{max-width:620px;margin:auto}h1{font-size:1.45rem;font-weight:650;line-height:1.3}h2{font-size:1rem}p{line-height:1.65;color:var(--sub)}.panel{background:var(--card);border-radius:24px;padding:20px;margin-top:18px}
+dl{display:grid;grid-template-columns:minmax(90px,38%) 1fr;gap:12px}dt{color:var(--sub)}dd{margin:0;overflow-wrap:anywhere;font-weight:500}button{border:0;background:var(--accent);color:var(--surface);font-size:1rem;font-weight:650;padding:13px 21px;border-radius:22px;min-height:48px}
+button:disabled{opacity:.38}.error{color:#bf534b}.small{font-size:.87rem}
+</style></head>
+<body><main><header><h1>OP6 原生 KPM 管理</h1><p>KernelPatch 内置运行时 · BakaSU 唯一权限入口</p></header>
+<section class="panel" aria-live="polite"><h2>内核运行状态</h2><dl>
+<dt>设备</dt><dd id="device">读取中</dd>
+<dt>内核版本</dt><dd id="kernel">读取中</dd>
+<dt>运行时设备</dt><dd id="runtime">读取中</dd>
+<dt>KPM 执行器</dt><dd id="loader">未接通（Stage 2B）</dd>
+<dt>上游基线</dt><dd>KernelPatch 0.13.9 · 2026-10-10 源码</dd>
+</dl><button id="refresh" type="button">刷新检测</button><p id="hint" class="small" role="status"></p></section>
+<section class="panel"><h2>KPM 插件</h2><p>当前实验分支只有 ELF 检查和 ARM64 重定位编译门禁，尚不能安全执行 KPM。加载、卸载、开机自动加载入口必须等待原生执行器、权限控制和真机回退验证后才开放。</p><button type="button" disabled aria-label="加载 KPM，尚不可用">加载 KPM（未开放）</button></section>
+<p class="small">此界面没有常驻服务、不修改 Boot、不使用独立 Root、也不会调用外部 KernelPatch 程序。勿与 KernelPatch-Next 同时向 Boot 注入第二套核心。</p></main>
+<script>
+const el=id=>document.getElementById(id);
+function result(s){const p=(s||"").trim().split("\n");el("device").textContent=p[0]||"不可用";el("kernel").textContent=p[1]||"不可用";el("runtime").textContent=p[2]||"不可用";el("hint").textContent="仅只读检查，不执行任何 KPM";}
+function refresh(){el("hint").textContent="正在检测…";const cmd="getprop ro.product.device; uname -r; if [ -c /dev/op6-kpm ]; then echo /dev/op6-kpm; else echo 未提供设备接口; fi";
+if(!window.ksu||typeof window.ksu.exec!=="function"){el("device").textContent="桥接不可用";el("kernel").textContent="—";el("runtime").textContent="—";el("hint").textContent="当前 Root 管理器未提供 ksu.exec WebUI 桥接";return;}
+try{
+ const r=window.ksu.exec(cmd);
+ if(typeof r==="string")result(r);
+ else if(r&&typeof r.then==="function")r.then(x=>result(typeof x==="string"?x:x.stdout)).catch(e=>el("hint").textContent=String(e));
+ else if(r&&typeof r.stdout==="string")result(r.stdout);
+ else{window.op6KpmStatusCallback=function(code,out,err){if(code)el("hint").textContent=err||"检测失败";else result(out);};window.ksu.exec(cmd,"op6KpmStatusCallback");}
+}catch(e){el("hint").textContent="检测错误："+String(e);}
+}
+el("refresh").addEventListener("click",refresh);refresh();
+</script></body></html>
