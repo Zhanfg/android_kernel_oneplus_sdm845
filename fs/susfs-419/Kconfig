@@ -24,3 +24,38 @@ config SUSFS_NATIVE_419_PATH
 	help
 	  Enable native SUSFS path flagging support only in a test
 	  kernel with complete VFS and user-space ABI integration.
+
+config SUSFS_NATIVE_419_MOUNT
+	bool "SUSFS 2.3.0: Mount namespace hiding (backport WIP)"
+	depends on SUSFS_NATIVE_419
+	default n
+
+config SUSFS_NATIVE_419_KSTAT
+	bool "SUSFS 2.3.0: Stat and statfs virtualization (backport WIP)"
+	depends on SUSFS_NATIVE_419
+	default n
+
+config SUSFS_NATIVE_419_LOG
+	bool "SUSFS 2.3.0: SUSFS logging control (backport WIP)"
+	depends on SUSFS_NATIVE_419
+	default n
+
+config SUSFS_NATIVE_419_HIDE_SYMBOLS
+	bool "SUSFS 2.3.0: Kernel symbol list handling (backport WIP)"
+	depends on SUSFS_NATIVE_419
+	default n
+
+config SUSFS_NATIVE_419_CMDLINE
+	bool "SUSFS 2.3.0: Cmdline and bootconfig control (backport WIP)"
+	depends on SUSFS_NATIVE_419
+	default n
+
+config SUSFS_NATIVE_419_OPEN_REDIRECT
+	bool "SUSFS 2.3.0: VFS open/readlink redirect (backport WIP)"
+	depends on SUSFS_NATIVE_419
+	default n
+
+config SUSFS_NATIVE_419_MAP
+	bool "SUSFS 2.3.0: Memory mapping virtualization (backport WIP)"
+	depends on SUSFS_NATIVE_419
+	default n
