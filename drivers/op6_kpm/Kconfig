@@ -5,3 +5,11 @@ config OP6_KPM_RUNTIME
     default n
     help
       Privileged ABI v1; validates a KPM ELF file but DOES NOT LOAD IT.
+
+config OP6_KPM_RELOCATION
+    bool "OP6 ARM64 KPM relocation engine (object compilation only)"
+    depends on OP6_KPM_RUNTIME && ARM64
+    default n
+    help
+      Compile the reviewed upstream AArch64 ELF RELA relocation backend.
+      This does NOT yet load, execute or hook any KPM.

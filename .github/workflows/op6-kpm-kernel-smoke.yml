@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/enchilada-native-kpm-runtime-abi-v1
+      - feature/enchilada-kpatch-native-upstream-0139
     paths:
       - 'drivers/op6_kpm/**'
       - 'include/uapi/linux/op6_kpm.h'
@@ -10,6 +11,10 @@ on:
       - 'drivers/Makefile'
       - 'arch/arm64/configs/vendor/enchilada.config'
       - 'tools/op6_kpmctl.c'
+      - 'tools/check_op6_kernelpatch_snapshot.py'
+      - 'tools/sync_op6_kernelpatch.py'
+      - 'third_party/kernelpatch/**'
+      - 'extras/op6-kpm-webui/**'
       - '.github/workflows/op6-kpm-kernel-smoke.yml'
   workflow_dispatch:
 permissions:
@@ -26,6 +31,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends bc bison flex clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libelf-dev
       - name: Check native UAPI and offline ELF preflight
         run: |
+          python3 tools/check_op6_kernelpatch_snapshot.py
+          python3 -m py_compile tools/sync_op6_kernelpatch.py tools/check_op6_kernelpatch_snapshot.py
+          test ! -e extras/op6-kpm-webui/service.sh
+          test ! -e extras/op6-kpm-webui/post-fs-data.sh
+          test -f extras/op6-kpm-webui/webroot/index.html
           cc -std=gnu11 -Wall -Wextra -Werror -o /tmp/op6-kpmctl tools/op6_kpmctl.c
           /tmp/op6-kpmctl 2>&1 | grep -q 'Usage:'
           python3 -m unittest discover -s tests -p 'test_op6_kpm_elf_preflight.py' -v
@@ -41,3 +51,9 @@ jobs:
           grep -qx 'CONFIG_OP6_KPM_RUNTIME=y' out/.config
           make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 -j8 drivers/op6_kpm/kpm_core.o
           test -s out/drivers/op6_kpm/kpm_core.o
+          if [[ "$GITHUB_REF_NAME" == feature/enchilada-kpatch-native-upstream-0139 ]]; then
+            grep -qx 'CONFIG_OP6_KPM_RELOCATION=y' out/.config
+            make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 -j8 drivers/op6_kpm/op6_insn.o drivers/op6_kpm/op6_relo.o
+            test -s out/drivers/op6_kpm/op6_insn.o
+            test -s out/drivers/op6_kpm/op6_relo.o
+          fi

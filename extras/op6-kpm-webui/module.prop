@@ -1,0 +1,6 @@
+id=op6-kpm-webui
+name=OP6 KernelPatch Native WebUI Preview
+version=0.1.0-preview
+versionCode=1
+author=Axymorrsen / OP6 kernel integration
+description=Read-only BakaSU WebUI for the staged in-kernel KernelPatch engine. NO module execution yet; no service or boot patching.
