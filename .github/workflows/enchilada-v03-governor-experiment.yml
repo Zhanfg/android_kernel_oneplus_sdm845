@@ -1,0 +1,125 @@
+name: OnePlus 6 v0.3 Early-boot schedutil kernel EXPERIMENT
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/enchilada-a17-v03-early-schedutil
+
+permissions:
+  contents: read
+
+# A new build replaces earlier builds started with this revised workflow.
+concurrency:
+  group: enchilada-a17-bakasu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kernel:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Linux 4.19 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex build-essential \
+            libssl-dev libelf-dev clang lld llvm ccache gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi device-tree-compiler cpio
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: enchilada-clang-ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            enchilada-clang-ccache-${{ runner.os }}-
+      - name: Enable bounded compiler cache
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.ccache"
+          # Set variables in THIS shell too, not only subsequent GITHUB_ENV steps.
+          # Without export, --max-size targets ~/.cache/ccache instead of .ccache.
+          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache"
+          export CCACHE_BASEDIR="$GITHUB_WORKSPACE"
+          export CCACHE_COMPILERCHECK=content
+          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$CCACHE_BASEDIR" >> "$GITHUB_ENV"
+          echo "CCACHE_COMPILERCHECK=$CCACHE_COMPILERCHECK" >> "$GITHUB_ENV"
+          ccache --max-size=1500M
+          ccache --zero-stats
+          echo "Using $(ccache --get-config cache_dir) (max-size $(ccache --get-config max_size))"
+      - name: Integrate pinned BakaSU
+        run: sh scripts/setup-bakasu.sh
+      - name: Prepare Enchilada kernel config
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC='ccache clang' LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' out/.config
+          grep -qx '# CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE is not set' out/.config
+          grep -qx 'CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y' out/.config
+          grep -qx 'CONFIG_SECCOMP=y' out/.config
+          grep -qx 'CONFIG_SECCOMP_FILTER=y' out/.config
+          grep -qx 'CONFIG_KSU_MULTI_MANAGER_SUPPORT=y' out/.config
+          grep -qx 'CONFIG_EROFS_FS=y' out/.config
+          grep -qx 'CONFIG_SCHED_WALT=y' out/.config
+          grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
+          ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+      - name: Build and verify device trees before kernel image
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC='ccache clang' LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          JOBS=$(nproc)
+          echo "Compiling with ${JOBS} workers on $(nproc) available logical CPUs"
+          # Avoid racing Image.gz-dtb against DTB compilation; the old
+          # Makefile discovers appended DTBs from already-built files.
+          time make -j"${JOBS}" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs
+          test -s out/arch/arm64/boot/dts/qcom/sdm845.dtb
+          test -s out/arch/arm64/boot/dts/qcom/sdm845-v2.dtb
+          test -s out/arch/arm64/boot/dts/qcom/sdm845-v2.1.dtb
+          time make -j"${JOBS}" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          test -s out/.config
+          python3 scripts/verify-appended-dtbs.py out/arch/arm64/boot/Image.gz-dtb
+          mkdir -p dist
+          cp out/.config dist/v03-kernel.config
+          cp out/arch/arm64/boot/Image.gz-dtb dist/v03-Image.gz-dtb
+          (cd out/arch/arm64/boot/dts/qcom && sha256sum sdm845.dtb sdm845-v2.dtb sdm845-v2.1.dtb) > dist/v03-dtb-sha256.txt
+          sha256sum dist/v03-Image.gz-dtb > dist/v03-kernel-sha256.txt
+          {
+            printf 'OnePlus 6 early schedutil governor experiment only; NOT boot-tested.\n'
+            printf 'Base daily boot: 4.19.325 BakaSU v0.2; unchanged BakaSU SHA and device trees.\n'
+            printf 'Experiment: compile-time CPU_FREQ_DEFAULT_GOV_SCHEDUTIL vs PERFORMANCE.\n'
+            printf 'This does not change governor policy after Android init or override Power HAL.\n'
+            printf 'Original Boot/Ramdisk/AVB must be repacked for experimental testing; AK3 from this job must NOT be flashed via stock AOSP Recovery.\n'
+          } > dist/v03-EXPERIMENT-NOT-BOOT-TESTED.txt
+          ccache --show-stats | tee dist/ccache-stats.txt
+          {
+            echo "ccache stats for run $GITHUB_RUN_ID"
+            echo "Kernel source commit: $GITHUB_SHA"
+            echo "Cache key restore prefix: enchilada-clang-ccache-${{ runner.os }}-"
+            echo "NOTE: LLVM LTO final linking is not accelerated by compiler object cache."
+          } > dist/cache-build-notes.txt
+      - name: Package pinned AnyKernel3
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/package-ak3.sh
+          unzip -tqq dist/*_EXPERIMENTAL_*.zip
+      - name: Upload experimental AK3 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: enchilada-a17-bakasu-v03-early-schedutil-not-boot-tested
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
