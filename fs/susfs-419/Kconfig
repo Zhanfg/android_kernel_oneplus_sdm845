@@ -1,0 +1,26 @@
+# SUSFS 2.3.0 native 4.19 backport; do not switch BakaSU's hook method.
+config SUSFS_NATIVE_419
+	bool "Native SUSFS 2.3.0 core (experimental Linux 4.19)"
+	depends on KSU && KSU_MANUAL_HOOK && ARM64 && 64BIT && THREAD_INFO_IN_TASK
+	depends on FUSE_FS && FSNOTIFY
+	default n
+	help
+	  Compile SUSFS natively into the 4.19 kernel, using the existing
+	  BakaSU manual hooks. No dynamic kernel memory patching or LKM.
+	  Unfinished native backport: do not deploy to a primary device.
+
+config SUSFS_NATIVE_419_UNAME
+	bool "SUSFS uname interception (experimental)"
+	depends on SUSFS_NATIVE_419
+	default n
+	help
+	  Enable the 4.19 uname VFS-adjacent call site; remains inert
+	  until the SUSFS control ABI installs a uname rule.
+
+config SUSFS_NATIVE_419_PATH
+	bool "SUSFS path controls (not ready for production)"
+	depends on SUSFS_NATIVE_419
+	default n
+	help
+	  Enable native SUSFS path flagging support only in a test
+	  kernel with complete VFS and user-space ABI integration.

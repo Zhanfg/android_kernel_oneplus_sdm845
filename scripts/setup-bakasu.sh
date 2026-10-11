@@ -20,4 +20,5 @@ grep -qxF 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile ||
     printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
 grep -qxF 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig ||
     printf '\nsource "drivers/kernelsu/Kconfig"\n' >> drivers/Kconfig
+python3 "$ROOT/scripts/susfs-419/patch-bakasu-native.py" "$ROOT/KernelSU/kernel/core/init.c"
 printf 'BakaSU pinned at %s\n' "$SHA"

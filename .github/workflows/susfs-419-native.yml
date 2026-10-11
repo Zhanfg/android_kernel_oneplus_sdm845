@@ -1,0 +1,178 @@
+name: OnePlus 6 SUSFS 2.3.0 native 4.19 integration
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/enchilada-susfs230-native-419
+permissions:
+  contents: read
+concurrency:
+  group: susfs-native-419-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  legacy-kernel-patch-preflight:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            fs
+            include
+            kernel
+            security
+            arch
+            third_party/susfs
+            scripts/susfs-419
+          sparse-checkout-cone-mode: true
+      - name: Check both GitLab source baselines
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '#define SUSFS_VERSION "v1.5.5"' third_party/susfs/legacy-4.19/susfs.h
+          grep -q '#define SUSFS_VERSION "v2.3.0"' third_party/susfs/upstream-v2.3.0/susfs.h
+          grep -q '^VERSION = 4$' Makefile || true
+          python3 scripts/susfs-419/native_preflight.py --source . --report susfs-419-preflight.txt
+      - name: Publish audit report (no flashable build)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: susfs-419-native-preflight
+          path: susfs-419-preflight.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  core-compile-smoke:
+    if: contains(github.event.head_commit.message, '[smoke]') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install 4.19 compiler dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex build-essential libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+      - name: Setup exact pinned BakaSU
+        run: sh scripts/setup-bakasu.sh
+      - name: Try compiling GitLab v2.3.0 native core (NOT a kernel image)
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          set +e
+          # Compile all v2.3.0 SUSFS core feature paths for ABI/API coverage
+          # without changing BakaSU's running/manual-hook Kconfig choice.
+          # This is a single-object compile experiment, NOT an active kernel config.
+          SUSFS_TEST_FEATURES=(
+            CONFIG_KSU_SUSFS_SUS_PATH
+            CONFIG_KSU_SUSFS_SUS_MOUNT
+            CONFIG_KSU_SUSFS_SUS_KSTAT
+            CONFIG_KSU_SUSFS_SPOOF_UNAME
+            CONFIG_KSU_SUSFS_ENABLE_LOG
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT
+            CONFIG_KSU_SUSFS_SUS_MAP
+          )
+          CFLAGS_STRING=""
+          for feature in "${SUSFS_TEST_FEATURES[@]}"; do
+            CFLAGS_STRING+=" -D${feature}=1"
+          done
+          echo "Compiling SUSFS core with all native feature paths enabled (KCFLAGS only)."
+          make -j2 "${MAKE_ARGS[@]}" KCFLAGS="$CFLAGS_STRING" fs/susfs.o > susfs-419-compile.log 2>&1
+          rc=$?
+          set -e
+          echo "Compiler exit: $rc"
+          tail -n 110 susfs-419-compile.log
+          echo "Full log is an artifact; no boot image generated."
+          exit "$rc"
+      - name: Upload compiler output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: susfs-v230-linux-419-core-compiler-output
+          path: |
+            susfs-419-compile.log
+            out/.config
+          if-no-files-found: warn
+          retention-days: 14
+
+  native-vmlinux-419:
+    # Explicit source-only integration build; no flash ZIP and no boot claims.
+    if: contains(github.event.head_commit.message, '[full]') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Linux 4.19 kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex build-essential \
+            libssl-dev libelf-dev clang lld llvm ccache gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi device-tree-compiler cpio
+      - name: Verify and integrate pinned manual-hook BakaSU
+        run: |
+          sh scripts/setup-bakasu.sh
+          grep -q 'susfs_init();' KernelSU/kernel/core/init.c
+          grep -q 'CONFIG_SUSFS_NATIVE_419' KernelSU/kernel/core/init.c
+      - name: Configure native SUSFS independently of the BakaSU hook choice
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx 'CONFIG_SUSFS_NATIVE_419=y' out/.config
+          ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          mkdir -p dist
+          cp out/.config dist/native-419.config
+      - name: Link complete kernel Image.gz-dtb (not flashable or boot-validated)
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          JOBS=4
+          set +e
+          make -j"$JOBS" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs > dist/dtb-build.log 2>&1
+          d_rc=$?
+          if [ "$d_rc" -eq 0 ]; then
+            make -j"$JOBS" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb > dist/kernel-build.log 2>&1
+            k_rc=$?
+          else
+            k_rc=77
+          fi
+          set -e
+          echo "DTB exit: $d_rc; image exit: $k_rc"
+          [ -f dist/dtb-build.log ] && tail -n 35 dist/dtb-build.log || :
+          [ -f dist/kernel-build.log ] && tail -n 110 dist/kernel-build.log || :
+          if [ "$d_rc" -ne 0 ] || [ "$k_rc" -ne 0 ]; then
+            exit 1
+          fi
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          nm out/vmlinux | grep -E ' [Tt] (susfs_init|susfs_show_version)$' | tee dist/susfs-link-symbols.txt
+          sha256sum out/arch/arm64/boot/Image.gz-dtb | tee dist/Image.gz-dtb.sha256
+          echo 'Link-only artifact. DO NOT FLASH: no real-device validation.' > dist/NO_FLASH.txt
+      - name: Publish config / build log (not a flashing package)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enchilada-susfs230-native-vmlinux-build
+          path: dist/
+          retention-days: 14
+          if-no-files-found: warn

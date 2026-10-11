@@ -1240,12 +1240,23 @@ static int override_release(char __user *release, size_t len)
 	return ret;
 }
 
+#ifdef CONFIG_SUSFS_NATIVE_419_UNAME
+#include <linux/susfs_native_419.h>
+#include <linux/susfs.h>
+#include <linux/jump_label.h>
+extern struct static_key_false susfs_is_uname_spoof_buffer_set;
+#endif
+
 SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
 	struct new_utsname tmp;
 
 	down_read(&uts_sem);
 	memcpy(&tmp, utsname(), sizeof(tmp));
+#ifdef CONFIG_SUSFS_NATIVE_419_UNAME
+	if (static_branch_unlikely(&susfs_is_uname_spoof_buffer_set))
+		susfs_spoof_uname(&tmp);
+#endif
 	up_read(&uts_sem);
 	if (copy_to_user(name, &tmp, sizeof(tmp)))
 		return -EFAULT;
