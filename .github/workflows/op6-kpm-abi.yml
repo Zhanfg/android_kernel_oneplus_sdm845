@@ -1,0 +1,22 @@
+name: OnePlus6 KPM ABI preflight (no kernel rebuild)
+on:
+  push:
+    branches:
+      - feature/enchilada-native-kpm-runtime-abi-v1
+    paths:
+      - tools/op6_kpm_elf_preflight.py
+      - tests/test_op6_kpm_elf_preflight.py
+      - .github/workflows/op6-kpm-abi.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-elf:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject malformed KPM; accept well-formed test fixture
+        run: python3 -m unittest discover -s tests -p 'test_op6_kpm_elf_preflight.py' -v
+      - name: Python syntax check
+        run: python3 -m py_compile tools/op6_kpm_elf_preflight.py tests/test_op6_kpm_elf_preflight.py

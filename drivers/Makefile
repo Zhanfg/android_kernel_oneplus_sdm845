@@ -193,3 +193,4 @@ obj-$(CONFIG_SIOX)		+= siox/
 obj-$(CONFIG_GNSS)		+= gnss/
 obj-$(CONFIG_SENSORS_SSC)	+= sensors/
 obj-y				+= oneplus/
+obj-$(CONFIG_OP6_KPM_RUNTIME)	+= op6_kpm/
