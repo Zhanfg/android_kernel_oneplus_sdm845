@@ -1,10 +1,11 @@
-name: OnePlus 6 Android 17 BakaSU experimental
+name: OnePlus 6 Android 17 BakaSU I/O + Net experimental
 
 on:
   workflow_dispatch:
   push:
     branches:
       - feature/enchilada-a17-bakasu-manual-hook
+      - feature/enchilada-io-net-ipset-ep
 
 permissions:
   contents: read
@@ -60,12 +61,21 @@ jobs:
           set -euo pipefail
           MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC='ccache clang' LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
           make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
-          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config arch/arm64/configs/vendor/enchilada-perf-experimental.config
           make "${MAKE_ARGS[@]}" olddefconfig
           grep -qx 'CONFIG_KSU=y' out/.config
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
           grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
           ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          # Validate that the experimental features resolved, not merely
+          # that the fragment requested them (olddefconfig may drop options).
+          for option in MQ_IOSCHED_DEADLINE MQ_IOSCHED_KYBER NET_SCH_FQ_CODEL NET_SCH_FQ TCP_CONG_BBR IP_SET IP_SET_HASH_IP IP_SET_HASH_NET IP_SET_HASH_IPPORT IP_SET_HASH_NETPORT IP_SET_LIST_SET NETFILTER_XT_SET NET_EMATCH_IPSET; do
+            grep -qx "CONFIG_${option}=y" out/.config || { echo "::error::Missing CONFIG_${option}=y"; exit 1; }
+          done
+      - name: Validate helper script syntax
+        run: |
+          sh -n tools/op6-perf-probe.sh
+          sh -n tools/axipset.sh
       - name: Build and verify device trees before kernel image
         shell: bash
         run: |
