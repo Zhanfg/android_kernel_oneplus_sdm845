@@ -74,3 +74,20 @@ dispatch = dispatch.replace(boot_guard,
     "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n"
     "                susfs_start_sdcard_monitor_fn();", 1)
 dispatch_path.write_text(dispatch)
+
+
+# Export the upstream SUSFS SID/domain helpers even when BakaSU retains
+# MANUAL_HOOK. Required by native VFS mount, kstat and proc integration.
+selinux_path = root / "selinux/selinux.c"
+selinux = selinux_path.read_text()
+native_guard = "#ifdef CONFIG_KSU_SUSFS\n"
+if sum(line == native_guard for line in selinux.splitlines(keepends=True)) != 7:
+    raise SystemExit("Pinned BakaSU SELinux SUSFS integration guards changed")
+selinux = "".join(
+    "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n"
+    if line == native_guard else line
+    for line in selinux.splitlines(keepends=True)
+)
+selinux_path.write_text(
+    "#include <linux/susfs_native_419.h>\n" + selinux
+)
