@@ -5,18 +5,18 @@
 set -eu
 fail() { printf 'HDR AK3 BLOCKED: %s\n' "$*" >&2; exit 1; }
 ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
-AK3_DIR=$OP6_HDR_AK3_DIR
+AK3_DIR=$(printenv OP6_HDR_AK3_DIR 2>/dev/null || true)
 [ -n "$AK3_DIR" ] && [ -f "$AK3_DIR/anykernel.sh" ] || fail "Missing AK3 staging directory"
 [ -f "$AK3_DIR/tools/ak3-core.sh" ] || fail "Missing pinned AK3 core"
 [ -f "$ROOT/scripts/verify-appended-dtbs.py" ] || fail "Wrong kernel checkout"
 
 # All inputs must be explicitly provided by a private release build.
 for name in OP6_HDR_STOCK_COMPOSER OP6_HDR_CANDIDATE_COMPOSER OP6_HDR_STOCK_SETTINGS OP6_HDR_CANDIDATE_SETTINGS OP6_HDR_ABI_VALIDATOR OP6_HDR_SETTINGS_PARTITION; do
-    eval "value=\$$name"
+    value=$(printenv "$name" 2>/dev/null || true)
     [ -n "$value" ] || fail "$name is unset"
 done
 for name in OP6_HDR_STOCK_COMPOSER OP6_HDR_CANDIDATE_COMPOSER OP6_HDR_STOCK_SETTINGS OP6_HDR_CANDIDATE_SETTINGS OP6_HDR_ABI_VALIDATOR; do
-    eval "value=\$$name"
+    value=$(printenv "$name" 2>/dev/null || true)
     [ -s "$value" ] || fail "$name is not a nonempty regular file"
 done
 case "$OP6_HDR_SETTINGS_PARTITION" in
