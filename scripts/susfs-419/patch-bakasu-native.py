@@ -55,7 +55,7 @@ for relative in ("supercall/supercall.c", "supercall/dispatch.c"):
 umount_path = root / "feature/kernel_umount.c"
 umount = umount_path.read_text()
 guard = "#ifdef CONFIG_KSU_SUSFS\n"
-if sum(line == guard for line in umount.splitlines(keepends=True)) != 4:
+if sum(line == guard for line in umount.splitlines(keepends=True)) != 3:
     raise SystemExit("Pinned BakaSU unmount source changed; refuse native bridge")
 umount = "".join(
     "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n"
