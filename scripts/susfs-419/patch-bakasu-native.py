@@ -81,7 +81,7 @@ dispatch_path.write_text(dispatch)
 selinux_path = root / "selinux/selinux.c"
 selinux = selinux_path.read_text()
 native_guard = "#ifdef CONFIG_KSU_SUSFS\n"
-if sum(line == native_guard for line in selinux.splitlines(keepends=True)) != 7:
+if sum(line == native_guard for line in selinux.splitlines(keepends=True)) != 6:
     raise SystemExit("Pinned BakaSU SELinux SUSFS integration guards changed")
 selinux = "".join(
     "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n"
