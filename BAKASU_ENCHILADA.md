@@ -14,3 +14,6 @@ Before distributing a flashable ZIP, confirm ROM's kernel/DTBO and firmware ABI 
 ## Runner speed and DTB integrity (2026-10-10)
 
 The workflow uses ccache with bounded size and a restoring GitHub Actions cache. It builds device trees **before** `Image.gz-dtb` because the legacy kernel Makefile discovers appended DTBs from existing output files; concurrent targets risk silently omitting those DTBs. A verifier checks that the final image retains exactly three SDM845 DTBs as found in the provided ROM `boot.img`. Compilation uses runner-reported CPU count without disabling kernel CFI/LTO. Cache benefits are mainly for subsequent builds, not the first cold build.
+
+## Stock ROM device-tree order
+The original uwuAOSP17 boot.img and build 38043895739 contain exactly the same three SDM845 FDT blobs but in a different order. The final AK3 is normalized to original ROM order. Fixed blob hashes fail closed when DTBs change. This does not prove on-device boot. A separate repack action avoids recompilation and preserves ZIP executable modes.

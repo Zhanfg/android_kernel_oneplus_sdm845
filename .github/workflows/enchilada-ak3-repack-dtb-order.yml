@@ -1,0 +1,46 @@
+name: OnePlus 6 AK3 Match Original DTB Order
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/enchilada-a17-ak3-stock-dtb-order
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  repackage-known-kernel:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout tool changes only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download successful and previously validated build
+        uses: actions/download-artifact@v4
+        with:
+          name: enchilada-a17-resukisu-bakasu-ak3-experimental
+          repository: Zhanfg/android_kernel_oneplus_sdm845
+          run-id: 38043895739
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: original
+      - name: Repack immutable Image.gz kernel with ROM DTB order
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/normalize_enchilada_dtbs.py scripts/repack_ak3_rom_dtborder.py
+          python3 scripts/repack_ak3_rom_dtborder.py original dist
+          test -f dist/*_AK3_ROM_DTBORDER_9ad0027fcccb.zip
+          (cd dist && sha256sum -c *_AK3_ROM_DTBORDER_9ad0027fcccb.zip.sha256)
+          unzip -tqq dist/*_AK3_ROM_DTBORDER_9ad0027fcccb.zip
+          echo "Only ROM DTB order and ZIP release metadata changed. Not device-validated."
+      - name: Upload OnePlus 6 ROM-order experimental AK3
+        uses: actions/upload-artifact@v4
+        with:
+          name: enchilada-a17-bakasu-ak3-rom-dtb-order-experimental
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
