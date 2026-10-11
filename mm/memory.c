@@ -38,6 +38,7 @@
  * Aug/Sep 2004 Changed to four level page tables (Andi Kleen)
  */
 
+#include <linux/susfs_native_419.h>
 #include <linux/kernel_stat.h>
 #include <linux/mm.h>
 #include <linux/sched/mm.h>
@@ -4493,6 +4494,21 @@ int __access_remote_vm(struct task_struct *tsk, struct mm_struct *mm,
 		void *maddr;
 		struct page *page = NULL;
 
+#ifdef CONFIG_SUSFS_NATIVE_419_MAP
+		/*
+		 * 4.19 has find_vma(), not the newer vma_lookup(). All VMA
+		 * inspection is protected by mmap_read_lock_killable(mm).
+		 * Check every page step, including cross-VMA remote reads.
+		 */
+		if (unlikely(susfs_is_current_proc_umounted_app())) {
+			struct vm_area_struct *sus_vma = find_vma(mm, addr);
+
+			if (sus_vma && sus_vma->vm_start <= addr &&
+			    sus_vma->vm_file &&
+			    SUSFS_IS_INODE_SUS_MAP(file_inode(sus_vma->vm_file)))
+				break;
+		}
+#endif
 		ret = get_user_pages_remote(tsk, mm, addr, 1,
 				gup_flags, &page, &vma, NULL);
 		if (ret <= 0) {
