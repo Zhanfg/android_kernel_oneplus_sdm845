@@ -92,14 +92,7 @@ jobs:
           done
           [ "$dtb_rc" -eq 0 ] && [ "$kernel_rc" -eq 0 ]
           test -s out/arch/arm64/boot/Image.gz-dtb
-          nm out/vmlinux | grep -E ' [Tt] (susfs_init|susfs_show_version)        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: susfs-230-full-vfs-419-compile-diagnostics
-          path: dist/
-          if-no-files-found: warn
-          retention-days: 14
- >dist/susfs-link-symbols.txt
+          nm out/vmlinux | grep -E ' [Tt] (susfs_init|susfs_show_version)$' >dist/susfs-link-symbols.txt
           sha256sum out/arch/arm64/boot/Image.gz-dtb >dist/Image.gz-dtb.sha256
           echo 'CI LINK VALIDATION ONLY -- NOT A VERIFIED FLASH IMAGE' >dist/NO_FLASH.txt
       - name: Upload compiler diagnostics (NOT a flashable image)
