@@ -1,0 +1,43 @@
+name: OP6 KPM native ABI object CI (no full kernel rebuild)
+on:
+  push:
+    branches:
+      - feature/enchilada-native-kpm-runtime-abi-v1
+    paths:
+      - 'drivers/op6_kpm/**'
+      - 'include/uapi/linux/op6_kpm.h'
+      - 'drivers/Kconfig'
+      - 'drivers/Makefile'
+      - 'arch/arm64/configs/vendor/enchilada.config'
+      - 'tools/op6_kpmctl.c'
+      - '.github/workflows/op6-kpm-kernel-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  object-compile:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux 4.19 compile dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libelf-dev
+      - name: Check native UAPI and offline ELF preflight
+        run: |
+          cc -std=gnu11 -Wall -Wextra -Werror -Iinclude/uapi -o /tmp/op6-kpmctl tools/op6_kpmctl.c
+          /tmp/op6-kpmctl 2>&1 | grep -q 'Usage:'
+          python3 -m unittest discover -s tests -p 'test_op6_kpm_elf_preflight.py' -v
+      - name: Prepare BakaSU v0.3 config and compile KPM driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/setup-bakasu.sh
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config arch/arm64/configs/vendor/enchilada-perf-experimental.config
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 olddefconfig
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_OP6_KPM_RUNTIME=y' out/.config
+          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1 -j8 drivers/op6_kpm/kpm_core.o
+          test -s out/drivers/op6_kpm/kpm_core.o
