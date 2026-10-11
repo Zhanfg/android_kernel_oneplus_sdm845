@@ -11,6 +11,6 @@ for name, expected in m["files"].items():
     assert not pathlib.PurePosixPath(name).is_absolute()
     assert ".." not in pathlib.PurePosixPath(name).parts
     src = (P/name).read_bytes()
-    actual = hashlib.sha1(b"blob " + str(len(src)).encode() + b"\\0" + src).hexdigest()
+    actual = hashlib.sha1(b"blob " + str(len(src)).encode() + b"\0" + src).hexdigest()
     assert actual == expected, (name, actual, expected)
 print("OK: " + str(len(m["files"])) + " upstream files verified against Git blob SHAs")

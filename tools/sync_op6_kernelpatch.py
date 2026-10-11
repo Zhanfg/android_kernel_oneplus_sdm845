@@ -22,7 +22,7 @@ def get_bytes(url):
         return r.read()
 
 def git_blob_sha(content):
-    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\\0" + content).hexdigest()
+    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
 
 def main():
     p = argparse.ArgumentParser()
@@ -72,7 +72,7 @@ def main():
     meta["files"] = {p: blobs[p] for p in paths}
     # The built kernel adapter is intentionally never updated automatically.
     meta["execution_enabled"] = False
-    MANIFEST.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\\n", encoding="utf8")
+    MANIFEST.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf8")
     print("snapshot_updated=yes; commit for review, never auto-merge")
 
 if __name__ == "__main__":
