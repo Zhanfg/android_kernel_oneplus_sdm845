@@ -5,6 +5,7 @@
  *  Copyright (C) 1991, 1992  Linus Torvalds
  */
 
+#include <linux/susfs_native_419.h>
 #include <linux/export.h>
 #include <linux/mm.h>
 #include <linux/errno.h>
@@ -66,21 +67,51 @@ EXPORT_SYMBOL(generic_fillattr);
  * filehandle lookup code, which uses only the inode number and returns no
  * attributes to any user.  Any other code probably wants vfs_getattr.
  */
+#ifdef CONFIG_SUSFS_NATIVE_419_KSTAT
+extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);
+extern void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode,
+						struct kstat *stat, u32 result_mask);
+#endif
+
 int vfs_getattr_nosec(const struct path *path, struct kstat *stat,
 		      u32 request_mask, unsigned int query_flags)
 {
 	struct inode *inode = d_backing_inode(path->dentry);
+#ifdef CONFIG_SUSFS_NATIVE_419_KSTAT
+	u32 susfs_marker = 0;
+	bool is_fuse = false;
+	int rc;
+#endif
 
 	memset(stat, 0, sizeof(*stat));
 	stat->result_mask |= STATX_BASIC_STATS;
 	request_mask &= STATX_ALL;
 	query_flags &= KSTAT_QUERY_FLAGS;
+
+#ifdef CONFIG_SUSFS_NATIVE_419_KSTAT
+	if (susfs_is_current_app_uid() &&
+	    susfs_is_inode_sus_kstat(inode, &is_fuse))
+		susfs_marker = is_fuse ? STATX_SUS_KSTAT_FUSE : STATX_SUS_KSTAT;
+
+	if (inode->i_op->getattr)
+		rc = inode->i_op->getattr(path, stat, request_mask, query_flags);
+	else {
+		generic_fillattr(inode, stat);
+		rc = 0;
+	}
+	if (!rc && susfs_marker)
+		susfs_sus_kstat_spoof_generic_fillattr(inode, stat, susfs_marker);
+	/* Internal flags must not leak into the statx result mask. */
+	stat->result_mask &= ~(STATX_SUS_KSTAT | STATX_SUS_KSTAT_FUSE);
+	return rc;
+#else
 	if (inode->i_op->getattr)
 		return inode->i_op->getattr(path, stat, request_mask,
 					    query_flags);
 
 	generic_fillattr(inode, stat);
 	return 0;
+#endif
 }
 EXPORT_SYMBOL(vfs_getattr_nosec);
 
