@@ -106,3 +106,73 @@ jobs:
             out/.config
           if-no-files-found: warn
           retention-days: 14
+
+  native-vmlinux-419:
+    # Explicit source-only integration build; no flash ZIP and no boot claims.
+    if: contains(github.event.head_commit.message, '[full]') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install Linux 4.19 kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex build-essential \
+            libssl-dev libelf-dev clang lld llvm ccache gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi device-tree-compiler cpio
+      - name: Verify and integrate pinned manual-hook BakaSU
+        run: |
+          sh scripts/setup-bakasu.sh
+          grep -q 'susfs_init();' KernelSU/kernel/core/init.c
+          grep -q 'CONFIG_SUSFS_NATIVE_419' KernelSU/kernel/core/init.c
+      - name: Configure native SUSFS independently of the BakaSU hook choice
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx 'CONFIG_SUSFS_NATIVE_419=y' out/.config
+          ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          mkdir -p dist
+          cp out/.config dist/native-419.config
+      - name: Link complete kernel Image.gz-dtb (not flashable or boot-validated)
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          JOBS=4
+          set +e
+          make -j"$JOBS" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs > dist/dtb-build.log 2>&1
+          d_rc=$?
+          if [ "$d_rc" -eq 0 ]; then
+            make -j"$JOBS" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb > dist/kernel-build.log 2>&1
+            k_rc=$?
+          else
+            k_rc=77
+          fi
+          set -e
+          echo "DTB exit: $d_rc; image exit: $k_rc"
+          [ -f dist/dtb-build.log ] && tail -n 35 dist/dtb-build.log || :
+          [ -f dist/kernel-build.log ] && tail -n 110 dist/kernel-build.log || :
+          if [ "$d_rc" -ne 0 ] || [ "$k_rc" -ne 0 ]; then
+            exit 1
+          fi
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          nm out/vmlinux | grep -E ' [Tt] (susfs_init|susfs_show_version)$' | tee dist/susfs-link-symbols.txt
+          sha256sum out/arch/arm64/boot/Image.gz-dtb | tee dist/Image.gz-dtb.sha256
+          echo 'Link-only artifact. DO NOT FLASH: no real-device validation.' > dist/NO_FLASH.txt
+      - name: Publish config / build log (not a flashing package)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: enchilada-susfs230-native-vmlinux-build
+          path: dist/
+          retention-days: 14
+          if-no-files-found: warn
