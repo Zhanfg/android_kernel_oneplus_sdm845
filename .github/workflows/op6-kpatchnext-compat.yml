@@ -69,7 +69,7 @@ jobs:
               return ret;
           }
           EOF
-          printf '\\nOBJS += base/memcpy_shim.o\\n' >> upstream-kpatch/kernel/Makefile
+          echo 'OBJS += base/memcpy_shim.o' >> upstream-kpatch/kernel/Makefile
           make -C upstream-kpatch/kernel TARGET_COMPILE=aarch64-linux-gnu- CFLAGS='-fno-stack-protector -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only -g' -j2
           make -C upstream-kpatch/tools -j2
           upstream-kpatch/tools/kptools --version
