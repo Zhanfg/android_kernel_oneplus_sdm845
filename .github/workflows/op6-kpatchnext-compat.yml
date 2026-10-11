@@ -1,0 +1,94 @@
+name: OP6 KPatch-Next binary patch compatibility (non-flash CI)
+
+on:
+  push:
+    branches:
+      - diagnostic/op6-kpatch-next-v02-v03-bisect
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  patch-audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout regression scripts
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch exact boot-tested v0.3 CI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: enchilada-a17-resukisu-bakasu-ak3-experimental
+          run-id: 38126200019
+          github-token: ${{ github.token }}
+          path: forensic
+      - name: Install pinned KPatch-Next native tooling dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends git build-essential zlib1g-dev gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+      - name: Extract real v0.3 ARM64 Image (keep DTBs separate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import zlib, hashlib
+          files=list(Path('forensic').glob('*Integrated_ROM_Order_Image.gz-dtb'))
+          assert len(files)==1, files
+          data=files[0].read_bytes()
+          decompressor=zlib.decompressobj(16+zlib.MAX_WBITS)
+          image=decompressor.decompress(data)+decompressor.flush()
+          assert decompressor.eof and image[56:60]==b'ARMd'
+          Path('forensic/Image.unsigned').write_bytes(image)
+          Path('forensic/appended-dtbs.bin').write_bytes(decompressor.unused_data)
+          print('ARM64 Image bytes',len(image),'appended DTBs',len(decompressor.unused_data))
+          print('clean image sha256',hashlib.sha256(image).hexdigest())
+          PY
+      - name: Build actual pinned KPatch-Next kpimg and kptools
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q --filter=blob:none https://github.com/KernelSU-Next/KPatch-Next.git upstream-kpatch
+          git -C upstream-kpatch checkout -q 456744b29efb9989445463ab29e368fa59a103c4
+          test "$(git -C upstream-kpatch rev-parse HEAD)" = 456744b29efb9989445463ab29e368fa59a103c4
+          # Ubuntu's hosted aarch64-linux-gnu GCC lowers a large struct copy
+          # to memcpy; this standalone early-boot image has no libc.
+          # Supply a freestanding, byte-exact shim only for this diagnostic build.
+          cat > upstream-kpatch/kernel/base/memcpy_shim.c <<'EOF'
+          typedef __SIZE_TYPE__ size_t;
+          __attribute__((used)) void *memcpy(void *dst, const void *src, size_t len)
+          {
+              volatile unsigned char *d = (volatile unsigned char *)dst;
+              const volatile unsigned char *s = (const volatile unsigned char *)src;
+              void *ret = dst;
+              while (len--) *d++ = *s++;
+              return ret;
+          }
+          EOF
+          echo 'OBJS += base/memcpy_shim.o' >> upstream-kpatch/kernel/Makefile
+          make -C upstream-kpatch/kernel TARGET_COMPILE=aarch64-linux-gnu- CFLAGS='-fno-stack-protector -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only -g' -j2
+          make -C upstream-kpatch/tools -j2
+          upstream-kpatch/tools/kptools --version
+      - name: Analyze kernel symbols, patch, inspect and reverse
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p forensic/audit
+          T=upstream-kpatch/tools/kptools
+          "$T" -d -i forensic/Image.unsigned > forensic/audit/kallsyms.log 2>&1
+          "$T" -p -i forensic/Image.unsigned -k upstream-kpatch/kernel/kpimg -o forensic/Image.kpatched > forensic/audit/patch.log 2>&1
+          "$T" -l -i forensic/Image.kpatched > forensic/audit/patched-metadata.log 2>&1
+          "$T" -u -i forensic/Image.kpatched -o forensic/Image.recovered > forensic/audit/unpatch.log 2>&1
+          python3 tools/op6_kpatchnext_binary_audit.py forensic/Image.unsigned forensic/Image.kpatched forensic/Image.recovered | tee forensic/audit/compare.log
+      - name: Publish audit logs (never flashable image)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OP6-KPatchNext-v03-ABI-Offline-Audit-NO-FLASH
+          path: forensic/audit/
+          if-no-files-found: warn
+          retention-days: 14
