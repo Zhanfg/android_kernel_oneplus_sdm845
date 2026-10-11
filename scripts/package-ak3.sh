@@ -11,6 +11,7 @@ AK3_SHA=1c9a500dd4aa8081952523126e97eb155aed941b
 KERNEL_SHA=$(git rev-parse HEAD)
 SHORT_SHA=$(printf '%s' "$KERNEL_SHA" | cut -c1-12)
 OUT_DIR="$ROOT/dist"
+OP6_HDR_AK3_STAGE=${OP6_HDR_AK3_STAGE:-0}
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 mkdir -p "$OUT_DIR" "$TMP/ak3"
@@ -59,11 +60,32 @@ No DTBO, vendor, firmware, or data partition modification is intended.
 Only flash on a compatible enchilada ROM after saving the original boot.img.
 Do not assume it is compatible merely because the ROM runs Android 17.
 EOF
+# HDR is explicit opt-in and OFF in every normal kernel build.
+# Never silently ship a new Vendor Composer without both verified binaries.
+HDR_NAME=
+case "$OP6_HDR_AK3_STAGE" in
+    1)
+        OP6_HDR_AK3_DIR="$TMP/ak3" sh "$ROOT/scripts/stage-hdr-ak3.sh"
+        HDR_NAME=_HDR_STAGING
+        cat >> "$TMP/ak3/README-EXPERIMENTAL.txt" <<'HDR_NOTE'
+
+HDR userspace staging enabled for an exact matching ROM.
+This AK3 also installs a KernelSU/Magisk helper with a Composer and
+platform-signed Settings.apk. Revert the helper module to restore
+Vendor/Settings; original boot.img is still required for kernel rollback.
+Preinstall validation must pass or no boot write is allowed.
+THIS IS NOT STABLE OR RUNTIME-VERIFIED. Do not publish to general users.
+HDR_NOTE
+        ;;
+    0) ;;
+    *) echo "OP6_HDR_AK3_STAGE must be 0 or 1" >&2; exit 1 ;;
+esac
+
 (
 cd "$TMP/ak3"
 sha256sum Image.gz-dtb > KERNEL_SHA256SUMS
 )
-PACKAGE="$OUT_DIR/OnePlus6_A17_ReSukiSU-BakaSU_4.19.325_AK3_EXPERIMENTAL_${SHORT_SHA}.zip"
+PACKAGE="$OUT_DIR/OnePlus6_A17_ReSukiSU-BakaSU_4.19.325_AK3${HDR_NAME}_EXPERIMENTAL_${SHORT_SHA}.zip"
 (cd "$TMP/ak3" && zip -q -r -9 "$PACKAGE" .)
 unzip -tqq "$PACKAGE"
 unzip -Z1 "$PACKAGE" | grep -qx 'anykernel.sh'
