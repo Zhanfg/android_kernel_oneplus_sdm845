@@ -310,6 +310,12 @@ extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
 				  void __user **arg);
 #endif
 
+#ifdef CONFIG_SUSFS_NATIVE_419
+#include <linux/susfs_def.h>
+extern int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
+				 void __user **arg);
+#endif
+
 SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 		void __user *, arg)
 {
@@ -320,6 +326,18 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 #ifdef CONFIG_KSU_MANUAL_HOOK
 	ksu_handle_sys_reboot(magic1, magic2, cmd, &arg);
 #endif
+#ifdef CONFIG_SUSFS_NATIVE_419
+	/* Restrict the v2.3.0 control ABI to its magic and to actual root.
+	 * Do not affect ordinary reboot requests or BakaSU's manual-hook path. */
+	if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
+		void __user *susfs_arg = arg;
+		int susfs_ret = ksu_handle_sys_reboot(magic1, magic2, cmd,
+						       &susfs_arg);
+		if (susfs_ret == 0)
+			return 0;
+	}
+#endif
+
 	/* We only trust the superuser with rebooting the system. */
 	if (!ns_capable(pid_ns->user_ns, CAP_SYS_BOOT))
 		return -EPERM;
