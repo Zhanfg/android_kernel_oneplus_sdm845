@@ -49,3 +49,28 @@ for relative in ("supercall/supercall.c", "supercall/dispatch.c"):
     # Header is local: no Kconfig selector or other root hook is changed.
     text = "#include <linux/susfs_native_419.h>\n" + text
     f.write_text(text)
+
+# Integrate SUSFS per-task namespace status with BakaSU's existing unmount
+# policy. Never replace the manual-hook setuid interception itself.
+umount_path = root / "feature/kernel_umount.c"
+umount = umount_path.read_text()
+guard = "#ifdef CONFIG_KSU_SUSFS\n"
+if sum(line == guard for line in umount.splitlines(keepends=True)) != 4:
+    raise SystemExit("Pinned BakaSU unmount source changed; refuse native bridge")
+umount = "".join(
+    "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n"
+    if line == guard else line for line in umount.splitlines(keepends=True)
+)
+umount_path.write_text("#include <linux/susfs_native_419.h>\n" + umount)
+
+# Keep the original boot-completed event sequencing, including the official
+# decryption watcher, while leaving BakaSU policy decisions unchanged.
+dispatch_path = root / "supercall/dispatch.c"
+dispatch = dispatch_path.read_text()
+boot_guard = "#ifdef CONFIG_KSU_SUSFS\\n                susfs_start_sdcard_monitor_fn();"
+if dispatch.count(boot_guard) != 1:
+    raise SystemExit("Pinned BakaSU boot monitor site changed")
+dispatch = dispatch.replace(boot_guard,
+    "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n"
+    "                susfs_start_sdcard_monitor_fn();", 1)
+dispatch_path.write_text(dispatch)
