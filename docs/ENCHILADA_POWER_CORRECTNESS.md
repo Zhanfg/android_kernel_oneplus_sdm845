@@ -17,3 +17,9 @@ Parent: `feature/enchilada-power-efficiency-v1` (`21b14a99c78883b55b0e1e35c8ceca
 - Do not merge directly to stable until boot and screen-on/off cycles validate.
 
 This branch is not wired into full kernel Actions until the already-running CPUFreq PR #15 compile is checked, to avoid needless parallel whole-kernel rebuilds.
+
+## OnePlus 6 默认 Governor：Schedutil
+
+核查 `drivers/cpufreq/Kconfig`，CPUFreq 默认 `choice` 为 `performance`，即开机时固定最高档；仅 `CONFIG_CPU_FREQ_GOV_SCHEDUTIL=y` 不会把它变成启动默认调频器。本分支专门在 `arch/arm64/configs/vendor/enchilada.config` 设置 `CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y`，保留 Performance 作为必要的回退实现。同步在对象编译 CI 的 `olddefconfig` 结果中强制校验。
+
+请注意 Android Power HAL 或 init.rc 后续仍可写 governor，实际运行时应读取两个 policy 的 `scaling_governor`。此更改不会降低 CPU 最高频率，实际续航效果尚未验证。

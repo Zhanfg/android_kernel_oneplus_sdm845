@@ -5,6 +5,7 @@ on:
     branches:
       - feature/enchilada-power-correctness
     paths:
+      - 'arch/arm64/configs/vendor/enchilada.config'
       - 'drivers/cpufreq/cpu-boost.c'
       - 'techpack/display/msm/dsi/dsi_panel.c'
       - '.github/workflows/enchilada-power-object.yml'
@@ -42,6 +43,8 @@ jobs:
           make "${MAKE_ARGS[@]}" olddefconfig
           grep -qx 'CONFIG_KSU=y' out/.config
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' out/.config
+          ! grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y' out/.config
       - name: Build CPU Boost and DSI panel objects
         shell: bash
         run: |
