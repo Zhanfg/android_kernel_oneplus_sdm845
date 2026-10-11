@@ -251,6 +251,42 @@ out_free_cache:
 	return NULL;
 }
 
+
+#ifdef CONFIG_SUSFS_NATIVE_419_MOUNT
+/*
+ * Preserve the vendor Linux 4.19 alloc_vfsmnt() object lifetime (percpu
+ * references, fs_pin, namespace lists and locks).  Only translate the
+ * mount-ID allocation, never memcpy() mount objects across kernel ABIs.
+ */
+static struct mount *susfs_alloc_unshare_ksu_vfsmnt(const char *name, int old_id)
+{
+	struct mount *mnt = alloc_vfsmnt(name);
+	if (!mnt)
+		return NULL;
+	ida_free(&mnt_id_ida, mnt->mnt_id);
+	mnt->mnt_id = old_id;
+	mnt->mnt.mnt_flags |= VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT;
+	return mnt;
+}
+
+static struct mount *susfs_alloc_non_unshare_ksu_vfsmnt(const char *name)
+{
+	int fake_id = ida_alloc_min(&mnt_id_ida, DEFAULT_KSU_MNT_ID, GFP_KERNEL);
+	struct mount *mnt;
+
+	if (fake_id < 0)
+		return NULL;
+	mnt = alloc_vfsmnt(name);
+	if (!mnt) {
+		ida_free(&mnt_id_ida, fake_id);
+		return NULL;
+	}
+	ida_free(&mnt_id_ida, mnt->mnt_id);
+	mnt->mnt_id = fake_id;
+	return mnt;
+}
+#endif
+
 /*
  * Most r/o checks on a fs are for operations that take
  * discrete amounts of time, like a write() or unlink().
@@ -3724,7 +3760,7 @@ const struct proc_ns_operations mntns_operations = {
 	.owner		= mntns_owner,
 };
 
-#ifdef CONFIG_KSU_SUSFS
+#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)
 /* - To retrieve the non sus mnt_id from mount */
 int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt) {
 	struct mount *mnt = orig_mnt;
