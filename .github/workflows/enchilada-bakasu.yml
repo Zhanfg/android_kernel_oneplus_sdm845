@@ -6,6 +6,7 @@ on:
     branches:
       - feature/enchilada-a17-bakasu-manual-hook
       - feature/enchilada-io-net-ipset-ep
+      - feature/enchilada-power-integrated-v1
       - feature/enchilada-power-efficiency-v1
 
 permissions:
@@ -68,6 +69,9 @@ jobs:
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
           grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
           ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          # Device-specific governor choice must survive Kconfig resolution.
+          grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' out/.config
+          ! grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y' out/.config
           # Validate that the experimental features resolved, not merely
           # that the fragment requested them (olddefconfig may drop options).
           for option in MQ_IOSCHED_DEADLINE MQ_IOSCHED_KYBER NET_SCH_FQ_CODEL NET_SCH_FQ TCP_CONG_BBR IP_SET IP_SET_HASH_IP IP_SET_HASH_NET IP_SET_HASH_IPPORT IP_SET_HASH_NETPORT IP_SET_LIST_SET NETFILTER_XT_SET NET_EMATCH_IPSET; do
@@ -77,6 +81,7 @@ jobs:
         run: |
           sh -n tools/op6-perf-probe.sh
           sh -n tools/axipset.sh
+          sh -n tools/op6-power-display-probe.sh
       - name: Build and verify device trees before kernel image
         shell: bash
         run: |
