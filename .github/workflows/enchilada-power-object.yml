@@ -51,6 +51,9 @@ jobs:
           set -euo pipefail
           MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
           make "${MAKE_ARGS[@]}" prepare
-          make -j2 "${MAKE_ARGS[@]}" drivers/cpufreq/cpu-boost.o techpack/display/msm/dsi/dsi_panel.o
+          # DSI sources are listed under techpack/display/msm/Makefile;
+          # dsi/ has no standalone Makefile, so build the aggregate object.
+          make -j2 "${MAKE_ARGS[@]}" drivers/cpufreq/cpu-boost.o techpack/display/msm/msm_drm.o
           test -s out/drivers/cpufreq/cpu-boost.o
           test -s out/techpack/display/msm/dsi/dsi_panel.o
+          test -s out/techpack/display/msm/msm_drm.o
