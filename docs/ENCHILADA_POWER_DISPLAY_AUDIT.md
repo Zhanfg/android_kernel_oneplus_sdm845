@@ -46,3 +46,14 @@ tools/op6-power-display-probe.sh：设备本地执行 sh op6-power-display-probe
 - Google Android Power Measurement https://source.android.com/docs/core/power/component
 - Google Power Stats HAL https://source.android.com/docs/core/power/power-stats-hal
 - Upstream panel sleep pinctrl 讨论 https://lists.openwall.net/linux-kernel/2026/03/11/1913
+
+## UFS 补充检查
+
+`drivers/scsi/ufs/ufshcd.c` 已有 clk gating、Hibern8-on-idle 及 auto-Hibern8；
+`drivers/scsi/ufs/ufs-qcom.c` 按硬件版本/设备树属性决定运行时 PM、power-collapse，
+并在 `qcom,disable-lpm` 时设置 `UFSHCD_QUIRK_BROKEN_AUTO_HIBERN8`。
+不应无条件解除这些防护，必须先看真机控制器 sysfs 与测试 I/O 数据一致性。
+探针现在会在 `/sys/bus/platform/devices/*ufshc*` 下**仅读取**可用的
+clkgate、Hibern8 和 runtime PM 状态；同时修正
+CPU Boost 主路径为 `/sys/devices/system/cpu/cpu_boost/`。
+
