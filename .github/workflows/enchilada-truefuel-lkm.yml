@@ -6,6 +6,8 @@ on:
       - feature/enchilada-truefuel-lkm-4500
     paths:
       - 'tools/battery/truefuel/**'
+      - 'drivers/power/supply/qcom/bq27541_fuelgauger.c'
+      - 'arch/arm64/boot/dts/qcom/enchilada.dtsi'
       - '.github/workflows/enchilada-truefuel-lkm.yml'
   workflow_dispatch:
 
