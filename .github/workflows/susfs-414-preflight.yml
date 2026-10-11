@@ -13,6 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # This is a 1GB+ kernel; only two source files are needed by the negative tests.
+          sparse-checkout: |
+            Makefile
+            tools/susfs/verify-2.3.0-linux-4.14.sh
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
       - name: Parse portable shell script
         run: sh -n tools/susfs/verify-2.3.0-linux-4.14.sh
       - name: Reject accidental application to existing Linux 4.19 OnePlus 6 tree
@@ -42,5 +49,4 @@ jobs:
             exit 1
           fi
       - name: Confirm this is NOT a kernel build or flash artifact
-        run: |
-          echo "Safety gate only. Not a SUSFS 2.3.0 port, not a boot test, not a stable release."
+        run: echo "Safety gate only. Not a SUSFS 2.3.0 port, not a boot test, not a stable release."
