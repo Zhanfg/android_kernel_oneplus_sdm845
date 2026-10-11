@@ -24,6 +24,26 @@
 
 #include <linux/uaccess.h>
 
+
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+/* Always reject unmarked tasks cheaply; acquire inode refs only for the
+ * narrower, activated SUSFS path namespace. Matches 32- and 64-bit ABIs. */
+static bool susfs_should_hide_dirent(struct super_block *sb, u64 ino)
+{
+	struct inode *inode;
+	bool hide;
+
+	if (!sb || !susfs_is_current_proc_umounted_app())
+		return false;
+	inode = ilookup(sb, ino);
+	if (!inode)
+		return false;
+	hide = susfs_is_inode_sus_path(inode);
+	iput(inode);
+	return hide;
+}
+#endif
+
 int iterate_dir(struct file *file, struct dir_context *ctx)
 {
 	struct inode *inode = file_inode(file);
@@ -133,9 +153,6 @@ static int fillonedir(struct dir_context *ctx, const char *name, int namlen,
 		container_of(ctx, struct readdir_callback, ctx);
 	struct old_linux_dirent __user * dirent;
 	unsigned long d_ino;
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	struct inode *inode;
-#endif
 
 	if (buf->result)
 		return -EINVAL;
@@ -147,6 +164,10 @@ static int fillonedir(struct dir_context *ctx, const char *name, int namlen,
 		buf->result = -EOVERFLOW;
 		return -EOVERFLOW;
 	}
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	if (susfs_should_hide_dirent(buf->sb, ino))
+		return 0;
+#endif
 	buf->result++;
 	dirent = buf->dirent;
 	if (!access_ok(VERIFY_WRITE, dirent,
@@ -178,6 +199,9 @@ SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 	if (!f.file)
 		return -EBADF;
 
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	buf.sb = file_inode(f.file)->i_sb;
+#endif
 	error = iterate_dir(f.file, &buf.ctx);
 	if (buf.result)
 		error = buf.result;
@@ -205,6 +229,9 @@ struct getdents_callback {
 	struct linux_dirent __user * previous;
 	int count;
 	int error;
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	struct super_block *sb;
+#endif
 };
 
 static int filldir(struct dir_context *ctx, const char *name, int namlen,
@@ -228,6 +255,10 @@ static int filldir(struct dir_context *ctx, const char *name, int namlen,
 		buf->error = -EOVERFLOW;
 		return -EOVERFLOW;
 	}
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	if (susfs_should_hide_dirent(buf->sb, ino))
+		return 0;
+#endif
 	dirent = buf->previous;
 	if (dirent) {
 		if (signal_pending(current))
@@ -275,6 +306,9 @@ SYSCALL_DEFINE3(getdents, unsigned int, fd,
 	if (!f.file)
 		return -EBADF;
 
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	buf.sb = file_inode(f.file)->i_sb;
+#endif
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
@@ -295,6 +329,9 @@ struct getdents_callback64 {
 	struct linux_dirent64 __user * previous;
 	int count;
 	int error;
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	struct super_block *sb;
+#endif
 };
 
 static int filldir64(struct dir_context *ctx, const char *name, int namlen,
@@ -312,6 +349,10 @@ static int filldir64(struct dir_context *ctx, const char *name, int namlen,
 	buf->error = -EINVAL;	/* only used if we fail.. */
 	if (reclen > buf->count)
 		return -EINVAL;
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	if (susfs_should_hide_dirent(buf->sb, ino))
+		return 0;
+#endif
 	dirent = buf->previous;
 	if (dirent) {
 		if (signal_pending(current))
@@ -361,6 +402,9 @@ int ksys_getdents64(unsigned int fd, struct linux_dirent64 __user *dirent,
 	if (!f.file)
 		return -EBADF;
 
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	buf.sb = file_inode(f.file)->i_sb;
+#endif
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
@@ -408,9 +452,6 @@ static int compat_fillonedir(struct dir_context *ctx, const char *name,
 		container_of(ctx, struct compat_readdir_callback, ctx);
 	struct compat_old_linux_dirent __user *dirent;
 	compat_ulong_t d_ino;
-#ifdef CONFIG_KSU_SUSFS_SUS_PATH
-	struct inode *inode;
-#endif
 
 	if (buf->result)
 		return -EINVAL;
@@ -422,6 +463,10 @@ static int compat_fillonedir(struct dir_context *ctx, const char *name,
 		buf->result = -EOVERFLOW;
 		return -EOVERFLOW;
 	}
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	if (susfs_should_hide_dirent(buf->sb, ino))
+		return 0;
+#endif
 	buf->result++;
 	dirent = buf->dirent;
 	if (!access_ok(VERIFY_WRITE, dirent,
@@ -453,6 +498,9 @@ COMPAT_SYSCALL_DEFINE3(old_readdir, unsigned int, fd,
 	if (!f.file)
 		return -EBADF;
 
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	buf.sb = file_inode(f.file)->i_sb;
+#endif
 	error = iterate_dir(f.file, &buf.ctx);
 	if (buf.result)
 		error = buf.result;
@@ -474,6 +522,9 @@ struct compat_getdents_callback {
 	struct compat_linux_dirent __user *previous;
 	int count;
 	int error;
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	struct super_block *sb;
+#endif
 };
 
 static int compat_filldir(struct dir_context *ctx, const char *name, int namlen,
@@ -494,6 +545,10 @@ static int compat_filldir(struct dir_context *ctx, const char *name, int namlen,
 		buf->error = -EOVERFLOW;
 		return -EOVERFLOW;
 	}
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	if (susfs_should_hide_dirent(buf->sb, ino))
+		return 0;
+#endif
 	dirent = buf->previous;
 	if (dirent) {
 		if (signal_pending(current))
@@ -541,6 +596,9 @@ COMPAT_SYSCALL_DEFINE3(getdents, unsigned int, fd,
 	if (!f.file)
 		return -EBADF;
 
+#ifdef CONFIG_SUSFS_NATIVE_419_PATH
+	buf.sb = file_inode(f.file)->i_sb;
+#endif
 	error = iterate_dir(f.file, &buf.ctx);
 	if (error >= 0)
 		error = buf.error;
