@@ -379,7 +379,8 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
 			if (!ret) {
 				pgoff = ((loff_t)vma->vm_pgoff) << PAGE_SHIFT;
 				start = vma->vm_start;
-				end = VMA_PAD_START(vma);
+				/* 4.19 uses vm_end; later VMA_PAD_START() is unavailable. */
+				end = vma->vm_end;
 				show_vma_header_prefix(m, start, end, flags, pgoff, dev, ino);
 				seq_pad(m, ' ');
 				if (spoofed_redirected_name)
@@ -1643,9 +1644,7 @@ static ssize_t pagemap_read(struct file *file, char __user *buf,
 	while (count && (start_vaddr < end_vaddr)) {
 		int len;
 		unsigned long end;
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-		struct vm_area_struct *vma;
-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+
 
 		pm.pos = 0;
 		end = (start_vaddr + PAGEMAP_WALK_SIZE) & PAGEMAP_WALK_MASK;
