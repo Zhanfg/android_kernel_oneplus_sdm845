@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config OP6_KPM_RUNTIME
+    bool "OP6 native KPM control ABI and ELF inspector (non-executing)"
+    depends on ARM64 && MODULES && KSU
+    default n
+    help
+      Privileged ABI v1; validates a KPM ELF file but DOES NOT LOAD IT.
