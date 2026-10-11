@@ -1526,7 +1526,10 @@ static int bq27541_read_i2c(u8 reg, int *rt_value, int b_single,
 		msg[1].len = 1;
 	msg[1].buf = data;
 	err = i2c_transfer(client->adapter, msg, 2);
-	if (err >= 0) {
+	/* Both command-pointer and data phases must succeed.  A partial
+	 * transfer previously passed as success with uninitialized data.
+	 */
+	if (err == 2) {
 		if (!b_single)
 			*rt_value = get_unaligned_le16(data);
 		else
@@ -1535,7 +1538,7 @@ static int bq27541_read_i2c(u8 reg, int *rt_value, int b_single,
 		return 0;
 	}
 	mutex_unlock(&battery_mutex);
-	return err;
+	return err < 0 ? err : -EIO;
 }
 
 #ifdef CONFIG_BQ27541_TEST_ENABLE
