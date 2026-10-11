@@ -169,13 +169,29 @@ static struct notifier_block boost_adjust_nb = {
 
 static void update_policy_online(void)
 {
+	struct cpufreq_policy *policy;
 	unsigned int i;
 
-	/* Re-evaluate policy to trigger adjust notifier for online CPUs */
+	/*
+	 * A shared CPUFreq policy can cover multiple online CPUs.
+	 * Updating every CPU used to re-run the same policy notifier
+	 * for every sibling (on SDM845 this is especially wasteful).
+	 *
+	 * While hotplug is blocked, policy->cpu is an online policy
+	 * representative. Update it once, preserving the existing boost
+	 * limits and duration on both clusters.
+	 */
 	get_online_cpus();
 	for_each_online_cpu(i) {
-		pr_debug("Updating policy for CPU%d\n", i);
-		cpufreq_update_policy(i);
+		policy = cpufreq_cpu_get(i);
+		if (!policy)
+			continue;
+
+		if (policy->cpu == i) {
+			pr_debug("Updating policy for CPU%d\n", i);
+			cpufreq_update_policy(i);
+		}
+		cpufreq_cpu_put(policy);
 	}
 	put_online_cpus();
 }

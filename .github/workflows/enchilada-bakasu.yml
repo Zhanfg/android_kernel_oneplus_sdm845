@@ -6,6 +6,7 @@ on:
     branches:
       - feature/enchilada-a17-bakasu-manual-hook
       - feature/enchilada-io-net-ipset-ep
+      - feature/enchilada-power-efficiency-v1
 
 permissions:
   contents: read
