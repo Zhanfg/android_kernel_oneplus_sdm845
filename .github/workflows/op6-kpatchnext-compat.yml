@@ -55,7 +55,7 @@ jobs:
           git clone -q --filter=blob:none https://github.com/KernelSU-Next/KPatch-Next.git upstream-kpatch
           git -C upstream-kpatch checkout -q 456744b29efb9989445463ab29e368fa59a103c4
           test "$(git -C upstream-kpatch rev-parse HEAD)" = 456744b29efb9989445463ab29e368fa59a103c4
-          make -C upstream-kpatch/kernel TARGET_COMPILE=aarch64-linux-gnu- -j2
+          make -C upstream-kpatch/kernel TARGET_COMPILE=aarch64-linux-gnu- CFLAGS='-fno-stack-protector -Wall -fno-builtin -std=gnu11 -nostdinc -mgeneral-regs-only -g' -j2
           make -C upstream-kpatch/tools -j2
           upstream-kpatch/tools/kptools --version
       - name: Analyze kernel symbols, patch, inspect and reverse
