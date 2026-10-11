@@ -23,6 +23,9 @@ endif
 
 obj-$(CONFIG_PROC_FS) += proc_namespace.o
 
+# SUSFS 2.3.0 native, independent of the BakaSU hook-method choice.
+obj-$(CONFIG_SUSFS_NATIVE_419) += susfs.o
+
 obj-y				+= notify/
 obj-$(CONFIG_EPOLL)		+= eventpoll.o
 obj-y				+= anon_inodes.o
