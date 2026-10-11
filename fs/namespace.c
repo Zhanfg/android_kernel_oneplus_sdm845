@@ -3790,8 +3790,15 @@ struct vfsmount *susfs_get_non_sus_vfsmnt_from_vfsmnt(struct vfsmount *vfsmnt) {
 	for (; mnt && mnt->mnt_parent && mnt != mnt->mnt_parent && mnt->mnt_id >= DEFAULT_KSU_MNT_ID; mnt = mnt->mnt_parent) { }
 	mntget(&mnt->mnt);
 	if (!mnt->mnt.mnt_root || IS_ERR(mnt->mnt.mnt_root)) {
-		mntput(&mnt->mnt);
+		/*
+		 * Callers always dput()/mntput() the returned object. Keep that
+		 * contract even on the malformed-mount fallback, and drop the
+		 * hash lock before releasing a mount reference.
+		 */
 		unlock_mount_hash();
+		mntput(&mnt->mnt);
+		mntget(vfsmnt);
+		dget(vfsmnt->mnt_root);
 		return vfsmnt;
 	}
 	dget(mnt->mnt.mnt_root);
