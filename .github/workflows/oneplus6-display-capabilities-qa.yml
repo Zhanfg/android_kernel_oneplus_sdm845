@@ -1,0 +1,37 @@
+name: OnePlus 6 Display Hardware Source Audit
+
+on:
+  push:
+    branches: ["audit/**"]
+    paths:
+      - "arch/arm64/boot/dts/qcom/dsi-panel-samsung_sofef00_m_cmd.dtsi"
+      - "arch/arm64/boot/dts/qcom/enchilada.dtsi"
+      - "tools/display/**"
+      - ".github/workflows/oneplus6-display-capabilities-qa.yml"
+  pull_request:
+    paths:
+      - "arch/arm64/boot/dts/qcom/dsi-panel-samsung_sofef00_m_cmd.dtsi"
+      - "arch/arm64/boot/dts/qcom/enchilada.dtsi"
+      - "tools/display/**"
+      - ".github/workflows/oneplus6-display-capabilities-qa.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-panel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          sparse-checkout: |
+            arch/arm64/boot/dts/qcom/dsi-panel-samsung_sofef00_m_cmd.dtsi
+            arch/arm64/boot/dts/qcom/enchilada.dtsi
+            tools/display
+          sparse-checkout-cone-mode: false
+      - name: Source and diagnostic shell checks
+        run: |
+          sh -n tools/display/enchilada_display_probe.sh
+          python3 -m unittest discover -s tools/display -p "test_panel_capabilities.py" -v
