@@ -1,0 +1,22 @@
+name: Enchilada power and display probe lint
+on:
+  push:
+    branches:
+      - audit/enchilada-power-display-20261011
+    paths:
+      - 'tools/op6-power-display-probe.sh'
+      - 'docs/ENCHILADA_POWER_DISPLAY_AUDIT.md'
+      - '.github/workflows/power-display-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe-syntax:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check POSIX shell script
+        run: sh -n tools/op6-power-display-probe.sh
