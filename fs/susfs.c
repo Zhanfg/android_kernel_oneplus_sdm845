@@ -1234,7 +1234,7 @@ static int copy_config_to_buf(const char *config_string, char *buf_ptr, size_t *
 void susfs_get_enabled_features(void __user **user_info) {
 	struct st_susfs_enabled_features *info = (struct st_susfs_enabled_features *)kzalloc(sizeof(struct st_susfs_enabled_features), GFP_KERNEL);
 	char *buf_ptr = NULL;
-	size_t copied_size = 0;
+	size_t copied_size __maybe_unused = 0;
 	int err = 0;
 
 	if (!info) {
@@ -1443,9 +1443,46 @@ static int susfs_handle_sdcard_inode_event(struct fsnotify_mark *mark, u32 mask,
 	return 0;
 }
 
+/*
+ * Linux 4.19 fsnotify reports a group-level handle_event callback.  Convert
+ * only the event metadata required by the upstream name matcher.  The
+ * translation stays inside fsnotify's SRCU read-side critical section and
+ * never sleeps or owns any mark/inode reference.
+ *
+ * Newer kernels provide handle_inode_event directly; leave upstream behavior
+ * untouched there.  The callback intentionally only queues the bounded,
+ * deferred cleanup already implemented by SUSFS.
+ */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+static int susfs_handle_sdcard_event_419(struct fsnotify_group *group,
+		struct inode *inode, u32 mask, const void *data, int data_type,
+		const unsigned char *file_name, u32 cookie,
+		struct fsnotify_iter_info *iter_info)
+{
+	struct fsnotify_mark *mark;
+	struct qstr qname;
+
+	if (!file_name)
+		return 0;
+	mark = fsnotify_iter_inode_mark(iter_info);
+	if (!mark)
+		return 0;
+
+	qname.name = file_name;
+	qname.len = strnlen((const char *)file_name, 8);
+	qname.hash = 0;
+	return susfs_handle_sdcard_inode_event(mark, mask, inode, inode,
+						     &qname, cookie);
+}
+
+static const struct fsnotify_ops fsnotify_ops = {
+	.handle_event = susfs_handle_sdcard_event_419,
+};
+#else
 static const struct fsnotify_ops fsnotify_ops = {
 	.handle_inode_event = susfs_handle_sdcard_inode_event,
 };
+#endif
 
 static int add_mark_on_inode(struct inode *inode, u32 mask,
 								struct fsnotify_mark **out)
