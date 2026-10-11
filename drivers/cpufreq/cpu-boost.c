@@ -169,13 +169,29 @@ static struct notifier_block boost_adjust_nb = {
 
 static void update_policy_online(void)
 {
+	struct cpufreq_policy *policy;
 	unsigned int i;
 
-	/* Re-evaluate policy to trigger adjust notifier for online CPUs */
+	/*
+	 * A shared CPUFreq policy can cover multiple online CPUs.
+	 * Updating every CPU used to re-run the same policy notifier
+	 * for every sibling (on SDM845 this is especially wasteful).
+	 *
+	 * While hotplug is blocked, policy->cpu is an online policy
+	 * representative. Update it once, preserving the existing boost
+	 * limits and duration on both clusters.
+	 */
 	get_online_cpus();
 	for_each_online_cpu(i) {
-		pr_debug("Updating policy for CPU%d\n", i);
-		cpufreq_update_policy(i);
+		policy = cpufreq_cpu_get(i);
+		if (!policy)
+			continue;
+
+		if (policy->cpu == i) {
+			pr_debug("Updating policy for CPU%d\n", i);
+			cpufreq_update_policy(i);
+		}
+		cpufreq_cpu_put(policy);
 	}
 	put_online_cpus();
 }
@@ -335,7 +351,7 @@ static int cpu_boost_init(void)
 
 	cpu_boost_wq = alloc_workqueue("cpuboost_wq", WQ_HIGHPRI, 0);
 	if (!cpu_boost_wq)
-		return -EFAULT;
+		return -ENOMEM;
 
 	INIT_WORK(&input_boost_work, do_input_boost);
 	INIT_DELAYED_WORK(&input_boost_rem, do_input_boost_rem);
@@ -344,27 +360,62 @@ static int cpu_boost_init(void)
 		s = &per_cpu(sync_info, cpu);
 		s->cpu = cpu;
 	}
-	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
+
+	ret = cpufreq_register_notifier(&boost_adjust_nb,
+					CPUFREQ_POLICY_NOTIFIER);
+	if (ret)
+		goto err_destroy_wq;
 
 	cpu_boost_kobj = kobject_create_and_add("cpu_boost",
 						&cpu_subsys.dev_root->kobj);
-	if (!cpu_boost_kobj)
+	if (!cpu_boost_kobj) {
+		ret = -ENOMEM;
 		pr_err("Failed to initialize sysfs node for cpu_boost.\n");
+		goto err_notifier;
+	}
 
 	ret = sysfs_create_file(cpu_boost_kobj, &input_boost_ms_attr.attr);
-	if (ret)
+	if (ret) {
 		pr_err("Failed to create input_boost_ms node: %d\n", ret);
+		goto err_kobj;
+	}
 
 	ret = sysfs_create_file(cpu_boost_kobj, &input_boost_freq_attr.attr);
-	if (ret)
+	if (ret) {
 		pr_err("Failed to create input_boost_freq node: %d\n", ret);
+		goto err_remove_ms;
+	}
 
 	ret = sysfs_create_file(cpu_boost_kobj,
 				&sched_boost_on_input_attr.attr);
-	if (ret)
+	if (ret) {
 		pr_err("Failed to create sched_boost_on_input node: %d\n", ret);
+		goto err_remove_freq;
+	}
 
 	ret = input_register_handler(&cpuboost_input_handler);
+	if (ret) {
+		pr_err("Failed to register CPU boost input handler: %d\n", ret);
+		goto err_remove_sched;
+	}
+
 	return 0;
+
+err_remove_sched:
+	sysfs_remove_file(cpu_boost_kobj, &sched_boost_on_input_attr.attr);
+err_remove_freq:
+	sysfs_remove_file(cpu_boost_kobj, &input_boost_freq_attr.attr);
+err_remove_ms:
+	sysfs_remove_file(cpu_boost_kobj, &input_boost_ms_attr.attr);
+err_kobj:
+	kobject_put(cpu_boost_kobj);
+	cpu_boost_kobj = NULL;
+err_notifier:
+	cpufreq_unregister_notifier(&boost_adjust_nb,
+				   CPUFREQ_POLICY_NOTIFIER);
+err_destroy_wq:
+	destroy_workqueue(cpu_boost_wq);
+	cpu_boost_wq = NULL;
+	return ret;
 }
 late_initcall(cpu_boost_init);

@@ -1,4 +1,4 @@
-name: OnePlus 6 Android 17 BakaSU I/O + Net experimental
+name: OnePlus 6 A17 BakaSU v0.3 Integrated Candidate (ROM DTB order)
 
 on:
   workflow_dispatch:
@@ -6,6 +6,9 @@ on:
     branches:
       - feature/enchilada-a17-bakasu-manual-hook
       - feature/enchilada-io-net-ipset-ep
+      - feature/enchilada-power-integrated-v1
+      - release/enchilada-a17-bakasu-v0.3-integrated-candidate
+      - feature/enchilada-power-efficiency-v1
 
 permissions:
   contents: read
@@ -53,8 +56,20 @@ jobs:
           ccache --max-size=1500M
           ccache --zero-stats
           echo "Using $(ccache --get-config cache_dir) (max-size $(ccache --get-config max_size))"
+      - name: Validate conservative integration patches before compiler work
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test_normalize_enchilada_dtbs.py
+          python3 scripts/test-bakasu-manager-discovery.py
+          sh -n scripts/setup-bakasu.sh
+          sh -n tools/OP6_BakaSU_KSU_Runtime_ReadOnly_v1.sh
       - name: Integrate pinned BakaSU
-        run: sh scripts/setup-bakasu.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/setup-bakasu.sh
+          grep -q 'BakaSU: no registered manager at boot-completed; retry scan' KernelSU/kernel/runtime/boot_event.c
       - name: Prepare Enchilada kernel config
         shell: bash
         run: |
@@ -67,6 +82,9 @@ jobs:
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
           grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
           ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          # Device-specific governor choice must survive Kconfig resolution.
+          grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' out/.config
+          ! grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y' out/.config
           # Validate that the experimental features resolved, not merely
           # that the fragment requested them (olddefconfig may drop options).
           for option in MQ_IOSCHED_DEADLINE MQ_IOSCHED_KYBER NET_SCH_FQ_CODEL NET_SCH_FQ TCP_CONG_BBR IP_SET IP_SET_HASH_IP IP_SET_HASH_NET IP_SET_HASH_IPPORT IP_SET_HASH_NETPORT IP_SET_LIST_SET NETFILTER_XT_SET NET_EMATCH_IPSET; do
@@ -76,6 +94,7 @@ jobs:
         run: |
           sh -n tools/op6-perf-probe.sh
           sh -n tools/axipset.sh
+          sh -n tools/op6-power-display-probe.sh
       - name: Build and verify device trees before kernel image
         shell: bash
         run: |
@@ -93,7 +112,15 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/.config
           python3 scripts/verify-appended-dtbs.py out/arch/arm64/boot/Image.gz-dtb
+          # The old 4.19 Makefile appends these DTBs in a different order from
+          # the *user-booted* ROM. Pin exact byte hashes and reorder only;
+          # reject any differing panel/DTB content before AK3 packaging.
+          python3 scripts/normalize_enchilada_dtbs.py out/arch/arm64/boot/Image.gz-dtb --in-place
+          python3 scripts/normalize_enchilada_dtbs.py out/arch/arm64/boot/Image.gz-dtb
+          sha256sum out/arch/arm64/boot/Image.gz-dtb
           mkdir -p dist
+          cp out/arch/arm64/boot/Image.gz-dtb dist/OnePlus6_v03_Integrated_ROM_Order_Image.gz-dtb
+          (cd out/arch/arm64/boot/dts/qcom && sha256sum sdm845.dtb sdm845-v2.dtb sdm845-v2.1.dtb) >dist/dtb-hashes.txt
           ccache --show-stats | tee dist/ccache-stats.txt
           {
             echo "ccache stats for run $GITHUB_RUN_ID"
@@ -107,10 +134,17 @@ jobs:
           set -euo pipefail
           sh scripts/package-ak3.sh
           unzip -tqq dist/*_EXPERIMENTAL_*.zip
+          # The flash-package kernel must match the normalized build exactly.
+          AK3="$(find dist -maxdepth 1 -type f -name '*_EXPERIMENTAL_*.zip' -print -quit)"
+          test -n "$AK3"
+          expected="$(sha256sum out/arch/arm64/boot/Image.gz-dtb | cut -d' ' -f1)"
+          actual="$(unzip -p "$AK3" Image.gz-dtb | sha256sum | cut -d' ' -f1)"
+          test "$expected" = "$actual"
+          printf 'Development candidate. NO on-device boot validation. Keep v0.2 boot for rollback.\n' >dist/NO_FLASH_WITHOUT_ROLLBACK.txt
       - name: Upload experimental AK3 artifacts
         uses: actions/upload-artifact@v4
         with:
           name: enchilada-a17-resukisu-bakasu-ak3-experimental
           path: dist/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14

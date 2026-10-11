@@ -491,7 +491,7 @@ exit:
 
 static int dsi_panel_power_off(struct dsi_panel *panel)
 {
-	int rc = 0;
+	int rc = 0, ret;
 
 	if (gpio_is_valid(panel->reset_config.disp_en_gpio))
 		gpio_set_value(panel->reset_config.disp_en_gpio, 0);
@@ -504,22 +504,33 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		gpio_set_value(panel->reset_config.lcd_mode_sel_gpio, 0);
 
 	if (gpio_is_valid(panel->panel_test_gpio)) {
-		rc = gpio_direction_input(panel->panel_test_gpio);
-		if (rc)
+		ret = gpio_direction_input(panel->panel_test_gpio);
+		if (ret) {
 			DSI_WARN("set dir for panel test gpio failed rc=%d\n",
-				 rc);
+				 ret);
+			rc = ret;
+		}
 	}
 
-	rc = dsi_panel_set_pinctrl_state(panel, false);
-	if (rc) {
-		DSI_ERR("[%s] failed set pinctrl state, rc=%d\n", panel->name,
-		       rc);
+	/* Complete shutdown even if an earlier step failed.
+	 * Preserve the first failure rather than masking it with a
+	 * later successful regulator disable.
+	 */
+	ret = dsi_panel_set_pinctrl_state(panel, false);
+	if (ret) {
+		DSI_ERR("[%s] failed set pinctrl state, rc=%d\n",
+			panel->name, ret);
+		if (!rc)
+			rc = ret;
 	}
 
-	rc = dsi_pwr_enable_regulator(&panel->power_info, false);
-	if (rc)
-		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
-				panel->name, rc);
+	ret = dsi_pwr_enable_regulator(&panel->power_info, false);
+	if (ret) {
+		DSI_ERR("[%s] failed to disable vregs, rc=%d\n",
+			panel->name, ret);
+		if (!rc)
+			rc = ret;
+	}
 
 	return rc;
 }
