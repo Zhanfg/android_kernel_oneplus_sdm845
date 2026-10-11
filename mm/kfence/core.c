@@ -640,7 +640,15 @@ static void toggle_allocation_gate(struct work_struct *work)
 	queue_delayed_work(system_unbound_wq, &kfence_timer,
 			   msecs_to_jiffies(kfence_sample_interval));
 }
-static DECLARE_DELAYED_WORK(kfence_timer, toggle_allocation_gate);
+/*
+ * Sampling allocations while a CPU is completely idle is not useful.
+ * Keep the existing period and memory-safety checks, but avoid waking
+ * an otherwise idle CPU solely to arm the next KFENCE sample.
+ *
+ * This changes timer deferrability only: active-system sampling still
+ * uses the configured sample_interval (500 ms on enchilada).
+ */
+static DECLARE_DEFERRABLE_WORK(kfence_timer, toggle_allocation_gate);
 
 /* === Public interface ===================================================== */
 
