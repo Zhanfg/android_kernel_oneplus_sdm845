@@ -1,0 +1,69 @@
+name: OnePlus 6 HDR AK3 staging contract
+
+on:
+  push:
+    branches:
+      - feature/enchilada-ak3-hdr-staging
+    paths:
+      - scripts/stage-hdr-ak3.sh
+      - scripts/package-ak3.sh
+      - .github/workflows/enchilada-hdr-ak3-stage.yml
+      - docs/OP6_HDR_AK3_INTEGRATION.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hdr-ak3-source-contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate shell and fail-closed packaging
+        run: |
+          set -euo pipefail
+          sh -n scripts/package-ak3.sh
+          sh -n scripts/stage-hdr-ak3.sh
+          grep -q 'OP6_HDR_AK3_STAGE=0' <(sed -n '/OP6_HDR_AK3_STAGE/p' scripts/package-ak3.sh) || \
+            grep -q 'OP6_HDR_AK3_STAGE:-0' scripts/package-ak3.sh
+          grep -q '^do.modules=0$' scripts/package-ak3.sh
+          grep -q '^do.systemless=0$' scripts/package-ak3.sh
+          grep -q 'OP6_HDR_AK3_DIR=' scripts/package-ak3.sh
+          grep -q 'OP6_HDR_STOCK_SETTINGS' scripts/stage-hdr-ak3.sh
+          grep -q 'apksigner verify --print-certs' scripts/stage-hdr-ak3.sh
+          grep -q '682e40228e267c3ae07f048ea7ec1e75f38273ce9f85d0ce2612c34f4650c736' scripts/stage-hdr-ak3.sh
+          grep -q 'Existing AK3 helper module' scripts/stage-hdr-ak3.sh
+          grep -q 'abort "HDR requires Vendor' scripts/stage-hdr-ak3.sh
+          # No payload must never produce a fake user-space HDR package.
+          mkdir -p /tmp/ak3-hdr-ci
+          printf '%s\n' 'do.modules=0' 'do.systemless=0' > /tmp/ak3-hdr-ci/anykernel.sh
+          mkdir -p /tmp/ak3-hdr-ci/tools
+          echo dummy > /tmp/ak3-hdr-ci/tools/ak3-core.sh
+          if OP6_HDR_AK3_DIR=/tmp/ak3-hdr-ci sh scripts/stage-hdr-ak3.sh > /tmp/expected-failure.log 2>&1; then
+            echo "Staging unexpectedly succeeded without signed payload" >&2
+            exit 1
+          fi
+          grep -q 'OP6_HDR_STOCK_COMPOSER is unset' /tmp/expected-failure.log
+          test ! -d /tmp/ak3-hdr-ci/modules
+          echo "HDR AK3 fail-closed source contracts passed"
+      - uses: actions/checkout@v4
+        with:
+          repository: Zhanfg/platform_packages_apps_Settings
+          ref: fix/display-real-capabilities-hdr-refresh
+          path: settings-source
+          persist-credentials: false
+      - name: Verify Settings uses Android native HDR policy
+        run: |
+          set -euo pipefail
+          P=settings-source/src/com/android/settings/display/Op6HdrContentPreferenceController.java
+          test -s "$P"
+          grep -q 'setUserPreferredHdrMode' "$P"
+          grep -q 'HDR_PREFERENCE_SDR_ONLY' "$P"
+          grep -q 'HDR_PREFERENCE_HDR_ALLOWED' "$P"
+          ! grep -q 'setUserDisabledHdrTypes' "$P"
+          grep -q 'android.permission.MANAGE_DISPLAYS' settings-source/AndroidManifest.xml
+          grep -q 'Op6HdrContentPreferenceController' settings-source/res/xml/display_settings.xml
+          echo "Native Settings source contract passed (not an Android APK build)"
