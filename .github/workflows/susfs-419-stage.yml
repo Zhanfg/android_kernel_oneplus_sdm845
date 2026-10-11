@@ -12,7 +12,7 @@ concurrency:
 jobs:
   compile-all-native-vfs:
     runs-on: ubuntu-22.04
-    timeout-minutes: 65
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,7 +21,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-            bc bison flex build-essential libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+            bc bison flex build-essential libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi device-tree-compiler cpio
       - name: Restore pinned BakaSU with verified native compatibility bridge
         run: sh scripts/setup-bakasu.sh
       - name: Configure all native SUSFS 2.3.0 feature switches
@@ -63,6 +63,45 @@ jobs:
           grep -E -C 3 'error:|fatal error:|Error [0-9]|undefined reference|ld.lld: error' dist/compiler.log | tail -n 190 || :
           tail -n 55 dist/compiler.log
           exit "$rc"
+      - name: Build full kernel DTBs and link Image.gz-dtb
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p dist
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy
+            OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          set +e
+          make -j4 "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs >dist/dtbs.log 2>&1
+          dtb_rc=$?
+          if [ "$dtb_rc" -eq 0 ]; then
+            make -j4 "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb >dist/full-kernel-link.log 2>&1
+            kernel_rc=$?
+          else
+            kernel_rc=77
+          fi
+          set -e
+          echo "DTB exit: $dtb_rc; full kernel exit: $kernel_rc"
+          for logfile in dist/dtbs.log dist/full-kernel-link.log; do
+            if [ -f "$logfile" ]; then
+              echo "--- error summary from $logfile ---"
+              grep -E -C 2 'error:|fatal error:|Error [0-9]|undefined reference|ld.lld: error' "$logfile" | tail -n 160 || :
+              tail -n 55 "$logfile" || :
+            fi
+          done
+          [ "$dtb_rc" -eq 0 ] && [ "$kernel_rc" -eq 0 ]
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          nm out/vmlinux | grep -E ' [Tt] (susfs_init|susfs_show_version)        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: susfs-230-full-vfs-419-compile-diagnostics
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 14
+ >dist/susfs-link-symbols.txt
+          sha256sum out/arch/arm64/boot/Image.gz-dtb >dist/Image.gz-dtb.sha256
+          echo 'CI LINK VALIDATION ONLY -- NOT A VERIFIED FLASH IMAGE' >dist/NO_FLASH.txt
       - name: Upload compiler diagnostics (NOT a flashable image)
         if: always()
         uses: actions/upload-artifact@v4
