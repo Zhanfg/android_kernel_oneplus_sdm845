@@ -13,6 +13,7 @@
  *	it under the terms of the GNU General Public License version 2,
  *	as published by the Free Software Foundation.
  */
+#include <linux/susfs_native_419.h>
 #include <linux/types.h>
 #include <linux/stddef.h>
 #include <linux/kernel.h>
@@ -747,13 +748,28 @@ static void avc_audit_pre_callback(struct audit_buffer *ab, void *a)
  * @ab: the audit buffer
  * @a: audit_data
  */
+#ifdef CONFIG_SUSFS_NATIVE_419
+extern u32 susfs_ksu_sid;
+extern u32 susfs_priv_app_sid;
+extern struct static_key_false susfs_is_avc_log_spoofing_enabled;
+#endif
+
 static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
 {
 	struct common_audit_data *ad = a;
+	u32 audited_tsid = ad->selinux_audit_data->tsid;
+
+#ifdef CONFIG_SUSFS_NATIVE_419
+	/* Alter display context only, NEVER the SELinux permission decision. */
+	if (static_branch_unlikely(&susfs_is_avc_log_spoofing_enabled) &&
+	    susfs_priv_app_sid && susfs_ksu_sid &&
+	    audited_tsid == susfs_ksu_sid)
+		audited_tsid = susfs_priv_app_sid;
+#endif
 	audit_log_format(ab, " ");
 	avc_dump_query(ab, ad->selinux_audit_data->state,
 		       ad->selinux_audit_data->ssid,
-		       ad->selinux_audit_data->tsid,
+		       audited_tsid,
 		       ad->selinux_audit_data->tclass);
 	if (ad->selinux_audit_data->denied) {
 		audit_log_format(ab, " permissive=%u",
