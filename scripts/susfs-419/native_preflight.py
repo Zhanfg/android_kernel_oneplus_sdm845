@@ -84,6 +84,22 @@ def main() -> int:
     for label, path, pattern in checks:
         record("OK" if match(read(path), pattern) else "CHECK", label)
 
+    bakasu = read("third_party/susfs/bakasu-pinned-Kconfig.txt")
+    conf = read("arch/arm64/configs/vendor/enchilada.config")
+    choice = re.search(r"(?ms)^choice\\b(.*?)^endchoice\\b", bakasu)
+    if not choice:
+        record("ERROR", "Pinned BakaSU hook-choice declaration could not be verified")
+    else:
+        data = choice.group(1)
+        if "config KSU_MANUAL_HOOK" in data and "config KSU_SUSFS" in data:
+            record("BLOCKED", "BakaSU Kconfig makes MANUAL_HOOK and KSU_SUSFS mutually exclusive; 4.19 needs independent native fs switch + explicit bridge")
+        else:
+            record("ERROR", "Pinned BakaSU Kconfig changed; re-audit hook architecture")
+    if "CONFIG_KSU_MANUAL_HOOK=y" in conf and "# CONFIG_KSU_SUSFS is not set" in conf:
+        record("OK", "Current device fragment remains manual-hook and SUSFS-disabled")
+    else:
+        record("ERROR", "Device hook baseline changed unexpectedly; stop until reviewed")
+
     # Explicitly identify why copying 5.15 patch or swapping new source is unsafe.
     record("BLOCKED", "v2.3.0 5.15 VFS/KernelSU integration is not ported to 4.19")
     record("BLOCKED", "v2.3.0 userspace ABI, native 4.19 config and BakaSU bridge not implemented")
