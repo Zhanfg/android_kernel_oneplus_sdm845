@@ -1,0 +1,53 @@
+name: OnePlus6 power correctness targeted compile
+
+on:
+  push:
+    branches:
+      - feature/enchilada-power-correctness
+    paths:
+      - 'drivers/cpufreq/cpu-boost.c'
+      - 'techpack/display/msm/dsi/dsi_panel.c'
+      - '.github/workflows/enchilada-power-object.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-changed-objects:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex build-essential libssl-dev libelf-dev clang lld llvm \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi device-tree-compiler
+      - name: Add pinned BakaSU source
+        run: sh scripts/setup-bakasu.sh
+      - name: Prepare exact kernel config
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config \
+            arch/arm64/configs/vendor/enchilada.config \
+            arch/arm64/configs/vendor/enchilada-perf-experimental.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+      - name: Build CPU Boost and DSI panel objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" prepare
+          make -j2 "${MAKE_ARGS[@]}" drivers/cpufreq/cpu-boost.o techpack/display/msm/dsi/dsi_panel.o
+          test -s out/drivers/cpufreq/cpu-boost.o
+          test -s out/techpack/display/msm/dsi/dsi_panel.o
