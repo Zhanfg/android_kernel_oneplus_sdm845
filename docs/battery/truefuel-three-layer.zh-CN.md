@@ -23,6 +23,15 @@
 以上属于**源文件审计**；不可直接证明 DTBO 覆盖了上述属性。
 当前未将 3300 画像替换为所谓 4500 化学参数，也未提高电流。必须先取得换装电芯的实际产品型号、额定/最高电压、热敏参数和充电截止规范，并确认当前有效 DTB 配置。
 
+### 已核验 BOOT 嵌入 DTB 和 16 个 DTBO 变体
+
+- 从真实已开机的 BakaSU `BOOT` 镜像解析出 **3 个 FDT DTB**；从手机提供的 `dtbo_a.img` 解析出 **16 个 Android DTBO entries**，未刷写设备。
+- DTBO 0–5 和 13–15（共 9 项）节点名称为 `OP_3300mah`；DTBO 6–12（共 7 项）名称为 `OP_3700mAh`。不可再笼统宣称所有变体均名为 3300。
+- **16 项都有完全相同的 224 字节 `qcom,fg-profile-data`**，共同 SHA-256 为 `347c86ab8b631440fcad0f2c87132b2140105bd1de48ed7171695e7a122c2fbc`。因此单改名称无法修正燃料计曲线。
+- 所有 16 项均有 `qcom,batt-id-kohm = 200`、`qcom,modify-soc-smooth`、`qcom,fv-max-uv = 4365000`、`qcom,fcc-max-ua = 500000`。后者是一个指定充电器节点的属性，**不能仅凭此值推断整机 Dash 快充上限**。
+- DTBO 文件哈希为 `b5cb6a9d87166807ba43fd773092cf22a26e7779d6792bdfc9fa4a6f631ff420`。BOOT 三组 FDT 需要 Bootloader 动态选择，并结合实际 overlay 应用结果；仅在镜像中找到节点不等于证明它是运行时最终值。
+- 对 4500mAh 电芯仍须验证替换电池包自身 BQ DataFlash、200kΩ 电池 ID 是否实际匹配、充电曲线与热敏参数。**不擅改 224 字节配置或提高电流**。
+
 ## 三、VENDOR / ODM / Android Health（已核验用户实际镜像）
 
 - 用户重新提取的逻辑 `vendor.img`：**369344512 字节**，SHA-256 `76a4dffc4fe39f6fb4146567fc5509a01845437478185b6a318a64a82e4d82c0`。EROFS 文件系统目录遍历 2156 条、错误 0；超级块 CRC32C 与 AVB vendor hashtree 均匹配。构建标识为 OnePlus6 / Android 17、2026-09-29，符合运行设备记录。
