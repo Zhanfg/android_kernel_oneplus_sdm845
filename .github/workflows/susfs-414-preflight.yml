@@ -1,0 +1,46 @@
+name: SUSFS 2.3.0 non-GKI 4.14 source gate
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tools/susfs/**'
+      - 'docs/susfs-2.3.0-4.14-port.md'
+      - '.github/workflows/susfs-414-preflight.yml'
+permissions:
+  contents: read
+jobs:
+  verify-safety-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse portable shell script
+        run: sh -n tools/susfs/verify-2.3.0-linux-4.14.sh
+      - name: Reject accidental application to existing Linux 4.19 OnePlus 6 tree
+        shell: bash
+        run: |
+          set +e
+          sh tools/susfs/verify-2.3.0-linux-4.14.sh
+          rc=$?
+          set -e
+          if [[ "$rc" -ne 2 ]]; then
+            echo "::error::Expected fail-closed exit 2 against current 4.19 source, got $rc"
+            exit 1
+          fi
+      - name: Reject incomplete 4.14 staging source
+        shell: bash
+        run: |
+          set -eu
+          work="$(mktemp -d)"
+          printf 'VERSION = 4\nPATCHLEVEL = 14\nSUBLEVEL = 350\n' > "$work/Makefile"
+          set +e
+          KERNEL_TREE="$work" sh tools/susfs/verify-2.3.0-linux-4.14.sh
+          rc=$?
+          set -e
+          rm -rf "$work"
+          if [[ "$rc" -ne 1 ]]; then
+            echo "::error::Incomplete 4.14 source must fail with exit 1, got $rc"
+            exit 1
+          fi
+      - name: Confirm this is NOT a kernel build or flash artifact
+        run: |
+          echo "Safety gate only. Not a SUSFS 2.3.0 port, not a boot test, not a stable release."
