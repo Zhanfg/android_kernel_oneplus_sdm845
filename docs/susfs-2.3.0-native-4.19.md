@@ -1,6 +1,6 @@
 # OnePlus 6 enchilada: native SUSFS 2.3.0 port onto Linux 4.19.325
 
-**Development only. NOT integrated, NOT compiled, NOT tested on-device, and NOT flashable.**
+**Development only. Core-only compile VERIFIED; native VFS integration, full kernel link, device testing and flashable image NOT completed.**
 This branch is isolated from the existing BakaSU Android 17 ROM kernel.
 
 ## Exact upstream provenance (2026-10-11)
@@ -44,6 +44,14 @@ DO NOT flip `CONFIG_KSU_SUSFS=y`: it would switch the Root hook path, potentiall
 8. Check no root regression; test path lookup/stat, namespace clone, bind mount, recursive mount, concurrent updates, SELinux, camera, modem, WLAN, encrypted userdata, charging, and recovery.
 9. For low power and performance: avoid persistent polling / daemon; keep unmatched rules in O(1) fast rejection path, no RCU stalls, compare p50/p95 lookup/open/stat with control kernel and 100 suspend/resume cycles; collect actual idle power rather than claim savings.
 10. Preserve verified known-good boot image/rollback; release any boot image only after real boot and repeated functional validations.
+
+## Core-object compiler evidence (2026-10-11)
+
+CI run `38119260386` successfully built `fs/susfs.o` using the Linux **4.19.325** tree and BakaSU pinned setup, with all nine SUSFS v2.3.0 feature macros enabled **for this object only** via `KCFLAGS`. This is NOT a usable kernel, and it does not enable KernelSU's Kconfig choice.
+
+The first build failed for 4.19's legacy fsnotify ops (`handle_event` vs `handle_inode_event`) and an unused variable when the normal config is off. A minimal Linux 4.19 event adapter was added, converting file-name metadata without sleeping in SRCU, and the variable was annotated as conditionally used. The follow-up core-object compile succeeded.
+
+**Still missing**: VFS call sites and namespace native hooks, Kconfig/KernelSU bridge, complete link, userspace end-to-end ABI tests, real suspend/resume and boot validation.
 
 ## CI interpretation
 
