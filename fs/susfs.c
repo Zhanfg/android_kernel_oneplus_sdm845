@@ -33,7 +33,12 @@ extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
 extern struct vfsmount *susfs_get_non_sus_vfsmnt_from_vfsmnt(struct vfsmount *vfsmnt);
 
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+#ifdef CONFIG_SUSFS_NATIVE_419
+/* Default quiet for low-power operation; runtime enable_log stays available. */
+DEFINE_STATIC_KEY_FALSE(susfs_is_log_enabled);
+#else
 DEFINE_STATIC_KEY_TRUE(susfs_is_log_enabled);
+#endif
 #define SUSFS_LOGI(fmt, ...) if (static_branch_likely(&susfs_is_log_enabled)) pr_info("susfs:[%u][%d][%s] " fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
 #define SUSFS_LOGE(fmt, ...) if (static_branch_likely(&susfs_is_log_enabled)) pr_err("susfs:[%u][%d][%s]" fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
 #else

@@ -80,6 +80,49 @@ static int statfs_by_dentry(struct dentry *dentry, struct kstatfs *buf)
 	return retval;
 }
 
+
+#ifdef CONFIG_SUSFS_NATIVE_419_KSTAT
+/*
+ * Keep the 4.19 VFS security and statfs semantics. Exported wrappers are
+ * used by SUSFS's kstat virtualization without forking filesystem code.
+ */
+int statfs_by_dentry_wrapper(struct dentry *dentry, struct kstatfs *buf)
+{
+	return statfs_by_dentry(dentry, buf);
+}
+
+int calculate_f_flags_wrapper(struct vfsmount *mnt)
+{
+	return calculate_f_flags(mnt);
+}
+
+static int susfs_statfs_by_dentry(struct dentry *dentry, struct vfsmount *mnt,
+				 struct kstatfs *buf, bool *is_fuse)
+{
+	int rc;
+
+	if (!dentry->d_sb->s_op->statfs)
+		return -ENOSYS;
+	memset(buf, 0, sizeof(*buf));
+	rc = security_sb_statfs(dentry);
+	if (rc)
+		return rc;
+	if (!susfs_sus_kstat_spoof_vfs_statfs(d_backing_inode(dentry),
+						buf, is_fuse)) {
+		if (!buf->f_frsize)
+			buf->f_frsize = buf->f_bsize;
+		return 0;
+	}
+	rc = dentry->d_sb->s_op->statfs(dentry, buf);
+	if (!rc) {
+		buf->f_flags = calculate_f_flags(mnt);
+		if (!buf->f_frsize)
+			buf->f_frsize = buf->f_bsize;
+	}
+	return rc;
+}
+#endif
+
 int vfs_statfs(const struct path *path, struct kstatfs *buf)
 {
 	int error;
