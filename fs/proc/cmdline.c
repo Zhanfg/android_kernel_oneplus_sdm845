@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/susfs_native_419.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <linux/proc_fs.h>
@@ -44,8 +45,21 @@ static void proc_command_line_init(void) {
 #endif
 }
 
+#ifdef CONFIG_SUSFS_NATIVE_419_CMDLINE
+extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
+extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
+#endif
+
 static int cmdline_proc_show(struct seq_file *m, void *v)
 {
+#ifdef CONFIG_SUSFS_NATIVE_419_CMDLINE
+	/* Only virtualize the userspace proc read; keep boot arguments intact. */
+	if (static_branch_unlikely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
+		susfs_spoof_cmdline_or_bootconfig(m);
+		seq_putc(m, '\n');
+		return 0;
+	}
+#endif
 	seq_puts(m, proc_command_line);
 	seq_putc(m, '\n');
 	return 0;
