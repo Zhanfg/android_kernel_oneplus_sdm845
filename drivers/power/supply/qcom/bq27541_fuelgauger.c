@@ -95,6 +95,13 @@
 #define BQ27411_REG_SOC                 0x1c
 #define BQ27411_REG_HEALTH              0x20
 #define BQ27411_REG_FCC                 0xE
+/* OP6_TRUEFUEL_NATIVE_READONLY: standard BQ27411-G1 register commands.
+ * Reads only; DataFlash, ChemID and charging controls are NOT modified.
+ */
+#define BQ27411_REG_RM_UNFILTERED       0x28
+#define BQ27411_REG_FCC_UNFILTERED      0x2c
+#define BQ27411_REG_SOC_UNFILTERED      0x30
+
 #define BQ27411_REG_OVER_TEMP           0x40
 #define BQ27411_REG_GET_OVER_TEMP_EN    0x0002
 
@@ -295,6 +302,72 @@ static int bq27541_read(u8 reg, int *rt_value, int b_single,
 {
 	return di->bus->read(reg, rt_value, b_single, di);
 }
+
+#ifdef CONFIG_GAUGE_BQ27411
+/*
+ * Native TrueFuel telemetry: use the existing BQ driver I2C reader, which
+ * takes battery_mutex.  A second LKM I2C client would bypass the driver's
+ * charging/configuration guards and is intentionally NOT used here.
+ *
+ * This returns -EAGAIN rather than fabricating 0 mAh when the MCU owns the
+ * gauge during Dash, suspend or the initial smooth-parameter transaction.
+ * It does not alter Android's public CAPACITY or CHARGE_FULL_DESIGN paths.
+ */
+static ssize_t op6_truefuel_hw_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	struct bq27541_device_info *di = dev_get_drvdata(dev);
+	int soc, soc_raw, rm, rm_raw, fcc, fcc_raw, dcap, ret;
+
+	if (!di || !di->bus || !di->client)
+		return -ENODEV;
+	if (di->device_type != DEVICE_BQ27411)
+		return -EOPNOTSUPP;
+	if (atomic_read(&di->suspended) || !READ_ONCE(di->allow_reading) ||
+	    READ_ONCE(di->fastchg_started) ||
+	    (di->modify_soc_smooth && !READ_ONCE(di->already_modify_smooth)))
+		return -EAGAIN;
+
+	ret = bq27541_read(BQ27411_REG_SOC, &soc, 0, di);
+	if (ret)
+		return ret;
+	ret = bq27541_read(BQ27411_REG_SOC_UNFILTERED, &soc_raw, 0, di);
+	if (ret)
+		return ret;
+	ret = bq27541_read(BQ27411_REG_RM, &rm, 0, di);
+	if (ret)
+		return ret;
+	ret = bq27541_read(BQ27411_REG_RM_UNFILTERED, &rm_raw, 0, di);
+	if (ret)
+		return ret;
+	ret = bq27541_read(BQ27411_REG_FCC, &fcc, 0, di);
+	if (ret)
+		return ret;
+	ret = bq27541_read(BQ27411_REG_FCC_UNFILTERED, &fcc_raw, 0, di);
+	if (ret)
+		return ret;
+	ret = bq27541_read(BQ27541_REG_DCAP, &dcap, 0, di);
+	if (ret)
+		return ret;
+
+	if (soc < 0 || soc > 100 || soc_raw < 0 || soc_raw > 100 ||
+	    fcc < 1 || fcc > 15000 || fcc_raw < 1 || fcc_raw > 15000 ||
+	    dcap < 1 || dcap > 15000)
+		return -ERANGE;
+	return scnprintf(buf, PAGE_SIZE,
+			 "chip=BQ27411\n"
+			 "soc_filtered_pct=%d\n"
+			 "soc_unfiltered_pct=%d\n"
+			 "remaining_mAh=%d\n"
+			 "remaining_unfiltered_mAh=%d\n"
+			 "fcc_mAh=%d\n"
+			 "fcc_unfiltered_mAh=%d\n"
+			 "design_capacity_mAh=%d\n",
+			 soc, soc_raw, rm, rm_raw, fcc, fcc_raw, dcap);
+}
+
+static DEVICE_ATTR_RO(op6_truefuel_hw);
+#endif
 
 /*
  * Return the battery temperature in tenths of degree Celsius
@@ -2080,6 +2153,12 @@ static int bq27541_battery_probe(struct i2c_client *client,
 	else {
 		pr_info("probe success battery not exist \n");
 	}
+#ifdef CONFIG_GAUGE_BQ27411
+	/* Diagnostics may fail independently; never fail battery probe. */
+	retval = device_create_file(&client->dev, &dev_attr_op6_truefuel_hw);
+	if (retval)
+		dev_warn(&client->dev, "TrueFuel read-only node unavailable: %d\n", retval);
+#endif
 	return 0;
 
 batt_failed_4:
@@ -2100,6 +2179,9 @@ static int bq27541_battery_remove(struct i2c_client *client)
 {
 	struct bq27541_device_info *di = i2c_get_clientdata(client);
 
+#ifdef CONFIG_GAUGE_BQ27411
+	device_remove_file(&client->dev, &dev_attr_op6_truefuel_hw);
+#endif
 	external_battery_gauge_unregister(&bq27541_batt_gauge);
 	bq27541_information_unregister(&bq27541_batt_gauge);
 	bq27541_cntl_cmd(di, BQ27541_SUBCMD_DISABLE_DLOG);
