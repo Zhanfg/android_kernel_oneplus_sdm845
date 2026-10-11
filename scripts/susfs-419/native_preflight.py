@@ -52,6 +52,7 @@ def main() -> int:
 
     for label, filename in [
         ("legacy", f"{OLD}/native-4.19.patch"),
+        ("nongki-v2", "third_party/susfs/nongki-v2.3.0-4.9-reference/50_add_susfs_in_kernel-4.9.patch"),
         ("modern", f"{NEW}/native-5.15.patch"),
     ]:
         patch = root / filename
@@ -63,14 +64,14 @@ def main() -> int:
         record("INFO", f"{label} patch references {len(target_files)} files; {len(absent)} missing from checkout")
         if absent:
             record("NOTE", f"Missing {label} paths: {', '.join(absent[:25])}")
-        if label == "legacy":
+        if label in ("legacy", "nongki-v2"):
             cmd = subprocess.run(
                 ["git", "-c", "core.safecrlf=false", "apply", "--check", "--verbose", str(patch)],
                 cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 timeout=120, check=False,
             )
             record("PASS" if cmd.returncode == 0 else "BLOCKED",
-                   f"Legacy 4.19 git apply --check exit={cmd.returncode}")
+                   f"{label} git apply --check against OnePlus6 4.19 exit={cmd.returncode}")
             if cmd.stdout:
                 out.extend("    " + line for line in cmd.stdout.splitlines()[:150])
 
@@ -100,6 +101,11 @@ def main() -> int:
     else:
         record("ERROR", "Device hook baseline changed unexpectedly; stop until reviewed")
 
+    non_gki_hdr = read("third_party/susfs/nongki-v2.3.0-4.9-reference/include/linux/susfs.h")
+    if '#define SUSFS_VERSION "v2.3.0"' in non_gki_hdr:
+        record("OK", "Third-party non-GKI Linux 4.9 v2.3.0 reference pinned (not authoritative and not applied)")
+    else:
+        record("ERROR", "Third-party non-GKI v2.3.0 reference missing or changed")
     # Explicitly identify why copying 5.15 patch or swapping new source is unsafe.
     record("BLOCKED", "v2.3.0 5.15 VFS/KernelSU integration is not ported to 4.19")
     record("BLOCKED", "v2.3.0 userspace ABI, native 4.19 config and BakaSU bridge not implemented")
