@@ -9,6 +9,7 @@ This branch is isolated from the existing BakaSU Android 17 ROM kernel.
 - GitLab SUSFS 4.19 historical baseline: `simonpunk/susfs4ksu`, branch `kernel-4.19`, SHA `001e69919c6271f690fd00b17e4c721c9e599152`; header **v1.5.5**, NOT 2.3.0.
 - GitLab SUSFS actual 2.3.0 baseline: branch `gki-android13-5.15`, SHA `687d2d18d94cb2e3e72d1074778d58384d58e379`; header **v2.3.0**.
 - Sources are copied byte-for-byte into `third_party/susfs/legacy-4.19/` and `third_party/susfs/upstream-v2.3.0/`. They are **not** part of the active kernel's fs/ or include/ trees. Original authors' GPL-2.0 terms must be preserved.
+- Additional non-GKI v2.3.0 research reference: `wxx9248/susfs4ksu`, branch `kernel-4.9-v2`, pinned SHA `71345ded5af28f55d76ebcdc7a9df9cea56111e1`, stored in `third_party/susfs/nongki-v2.3.0-4.9-reference/`. Third-party code is **not** canonical GitLab, not a Linux 4.19 patch, and has not been applied.
 
 ## Measured baseline incompatibilities (GitHub Actions preflight)
 
