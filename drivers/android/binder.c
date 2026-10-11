@@ -74,6 +74,9 @@
 #include <linux/ratelimit.h>
 
 #include <uapi/linux/android/binder.h>
+#ifdef CONFIG_REKERNEL
+#include "../rekernel/rekernel.h"
+#endif
 #include <uapi/linux/android/binderfs.h>
 #include <uapi/linux/sched/types.h>
 
@@ -3174,6 +3177,12 @@ static void binder_transaction(struct binder_proc *proc,
 		target_proc = target_thread->proc;
 		target_proc->tmp_ref++;
 		binder_inner_proc_unlock(target_thread->proc);
+#ifdef CONFIG_REKERNEL
+		if (proc->tsk && target_proc->tsk)
+			binder_reply_handler(proc->pid, proc->tsk,
+					     target_proc->pid, target_proc->tsk,
+					     false, tr);
+#endif
 	} else {
 		if (tr->target.handle) {
 			struct binder_ref *ref;
@@ -3226,6 +3235,12 @@ static void binder_transaction(struct binder_proc *proc,
 			goto err_dead_binder;
 		}
 		e->to_node = target_node->debug_id;
+#ifdef CONFIG_REKERNEL
+		if (proc->tsk && target_proc && target_proc->tsk)
+			binder_trans_handler(proc->pid, proc->tsk,
+					     target_proc->pid, target_proc->tsk,
+					     !!(tr->flags & TF_ONE_WAY), tr);
+#endif
 		if (security_binder_transaction(proc->cred,
 						target_proc->cred) < 0) {
 			return_error = BR_FAILED_REPLY;

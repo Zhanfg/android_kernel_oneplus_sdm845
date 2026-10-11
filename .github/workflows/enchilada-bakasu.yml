@@ -7,6 +7,7 @@ on:
       - feature/enchilada-a17-bakasu-manual-hook
       - feature/enchilada-io-net-ipset-ep
       - feature/enchilada-power-integrated-v1
+      - feature/enchilada-rekernel-native-117-419
       - release/enchilada-a17-bakasu-v0.3-integrated-candidate
       - feature/enchilada-power-efficiency-v1
 
@@ -80,6 +81,10 @@ jobs:
           make "${MAKE_ARGS[@]}" olddefconfig
           grep -qx 'CONFIG_KSU=y' out/.config
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          if [[ "$GITHUB_REF_NAME" == feature/enchilada-rekernel-native-117-419 ]]; then
+            grep -qx 'CONFIG_REKERNEL=y' out/.config
+            grep -qx '# CONFIG_REKERNEL_NETWORK is not set' out/.config
+          fi
           grep -qx 'CONFIG_KALLSYMS_ALL=y' out/.config
           ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
           # Device-specific governor choice must survive Kconfig resolution.
