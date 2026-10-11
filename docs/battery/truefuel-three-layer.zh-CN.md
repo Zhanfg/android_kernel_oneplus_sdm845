@@ -51,6 +51,22 @@
 - v0.4 新驱动更改后必须重新跑 CI；但即便编译通过，也不自动确认 KO 与手机匹配或允许刷入。
 - VENDOR 原始 EROFS 经过核验后保持不动，不重签名、不修改 SELinux、不自动替换 HAL。
 
+## 五、2026-10-11 追加 TI BQ27411 化学模型与复位约束（保留安全边界）
+
+根据 TI BQ27411-G1 数据手册、技术参考手册和 TI 工程师的技术答疑：
+
+1. **BQ27411-G1 是带预设化学模型的 pack-side Impedance Track 计量芯片**，不是任意可更换 ChemID 的 Flash Gauge。TI 答疑中对特定 BQ27411-G1C 指出固定 ChemID 0x0354，并明确不能像 bq27Z561-R2 一样编程新 ChemID。我们当前从手机确认的是设备类型 0x0421；仍需从芯片读取现用 ChemID 才能断言具体变体及兼容性，不能将 0x0354 当成实测结果。
+2. **设计容量 != 已学习满充容量 != 实际电量百分比。** 0x3C 是只读的 DesignCapacity() 显示窗口，实际参数位于相应配置内存；不能向 0x3C 直接写入达到永久改值。不可仅改 Android UI 元数据冒充模型校准。
+3. **OTP 与运行时配置严格区分。** TI 说明 bq27411 可使用固化的 OTP 黄金镜像，或者在复位后检测 Flags()[ITPOR]，再加载适用的 Golden Image。一次运行时配置成功并不保证断电或重启后永久生效。
+4. 需要进一步确认 4500mAh 替换电芯的额定电压、终止电压、热敏元件、包内电量计型号及其真实 ChemID 兼容性。若化学模型差异较大，应用侧/设备树无法强行补偿成精准 SOC，必须考虑匹配电芯/电量计等硬件方案。
+5. 当前代码只做只读观察及读数缓存；**不执行 unseal、Config Update、SOFT_RESET、OTP、ChemID 变更，不修改快充电流和热保护参数**。
+
+TI 资料：
+- https://www.ti.com/product/BQ27411-G1
+- https://www.ti.com/lit/ug/sluuas7b/sluuas7b.pdf
+- https://e2e.ti.com/support/power-management-group/power-management/f/power-management-forum/1126681/bq27411-g1-bq27411-learning-cycle
+- https://e2e.ti.com/support/power-management-group/power-management/f/power-management-forum/1590479/bq27411-g1-programming-the-bq27411
+
 ## 合并门槛与回退
 1. CI 编译新内核、DTB、LKM，并核对 Module.symvers + vermagic。
 2. 当前手机运行无参只读探针，比对三层实际配置。
