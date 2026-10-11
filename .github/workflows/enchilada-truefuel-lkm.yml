@@ -59,10 +59,16 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path('tools/battery/truefuel/op6_truefuel.c').read_text()
-          assert 'REG_SOC_UNFILTERED    0x30' in text
-          assert 'REG_DESIGN_CAPACITY   0x3c' in text
-          for bad in ('i2c_smbus_write', 'i2c_master_send', 'BQ27411_UNSEAL_KEY', 'module_param'):
-              assert bad not in text
+          assert 'POWER_SUPPLY_PROP_BQ_SOC' in text
+          assert 'POWER_SUPPLY_PROP_REMAINING_CAPACITY' in text
+          assert 'hardware_soc_path=' in text
+          for bad in ('i2c_transfer', 'i2c_get_adapter', 'i2c_master_send',
+                      'i2c_smbus_write', 'BQ27411_UNSEAL_KEY', 'module_param'):
+              assert bad not in text, bad
+          native = Path('drivers/power/supply/qcom/bq27541_fuelgauger.c').read_text()
+          assert 'OP6_TRUEFUEL_NATIVE_READONLY' in native
+          assert 'device_create_file(&client->dev, &dev_attr_op6_truefuel_hw)' in native
+          assert 'device_remove_file(&client->dev, &dev_attr_op6_truefuel_hw)' in native
           PY
           make -j"$(nproc)" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs
           make -j"$(nproc)" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb
