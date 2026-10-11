@@ -67,7 +67,7 @@ umount_path.write_text("#include <linux/susfs_native_419.h>\n" + umount)
 # decryption watcher, while leaving BakaSU policy decisions unchanged.
 dispatch_path = root / "supercall/dispatch.c"
 dispatch = dispatch_path.read_text()
-boot_guard = "#ifdef CONFIG_KSU_SUSFS\\n                susfs_start_sdcard_monitor_fn();"
+boot_guard = "#ifdef CONFIG_KSU_SUSFS\n                susfs_start_sdcard_monitor_fn();"
 if dispatch.count(boot_guard) != 1:
     raise SystemExit("Pinned BakaSU boot monitor site changed")
 dispatch = dispatch.replace(boot_guard,
