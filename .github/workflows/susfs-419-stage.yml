@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: susfs419stage-\${{ github.ref }}
+  group: susfs419stage-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   compile-all-native-vfs:
@@ -35,7 +35,7 @@ jobs:
           grep -qx 'CONFIG_SUSFS_NATIVE_419=y' out/.config
           ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
           for feature in PATH UNAME MOUNT KSTAT LOG HIDE_SYMBOLS CMDLINE OPEN_REDIRECT MAP; do
-            grep -qx "CONFIG_SUSFS_NATIVE_419_\${feature}=y" out/.config
+            grep -qx "CONFIG_SUSFS_NATIVE_419_${feature}=y" out/.config
           done
           mkdir -p dist
           cp out/.config dist/enchilada-susfs-full.config
@@ -55,7 +55,7 @@ jobs:
           make -j8 O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip LLVM=1 "\${targets[@]}" >dist/compiler.log 2>&1
+            STRIP=llvm-strip LLVM=1 "${targets[@]}" >dist/compiler.log 2>&1
           rc=$?
           echo "Object compiler exit=$rc"
           grep -E -C 3 'error:|fatal error:|Error [0-9]|undefined reference|ld.lld: error' dist/compiler.log | tail -n 190 || :
