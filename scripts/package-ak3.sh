@@ -47,6 +47,17 @@ PATCH_VBMETA_FLAG=auto;
 dump_boot;
 write_boot;
 AK3SCRIPT
+# HDR payload is intentionally passive until Android17 HWC binary, ABI, VINTF,
+# and rollback verification are completed. A companion archive may be shipped,
+# but this existing experimental AK3 boot installer will not activate it.
+OP6_HDR_AK3_OUT="$TMP/ak3/op6-hdr"
+OP6_HDR_COMPANION_ZIP="$(printenv OP6_HDR_COMPANION_ZIP 2>/dev/null || true)"
+OP6_HDR_COMPANION_SHA256="$(printenv OP6_HDR_COMPANION_SHA256 2>/dev/null || true)"
+OP6_HDR_COMPANION_ELF_SHA256="$(printenv OP6_HDR_COMPANION_ELF_SHA256 2>/dev/null || true)"
+export OP6_HDR_AK3_OUT OP6_HDR_COMPANION_ZIP \
+       OP6_HDR_COMPANION_SHA256 OP6_HDR_COMPANION_ELF_SHA256
+sh "$ROOT/scripts/package-op6-hdr-addon.sh"
+
 cat > "$TMP/ak3/README-EXPERIMENTAL.txt" <<EOF
 OnePlus 6 / enchilada / Android 17
 ReSukiSU (renamed BakaSU) — Linux 4.19.325
@@ -69,6 +80,8 @@ unzip -tqq "$PACKAGE"
 unzip -Z1 "$PACKAGE" | grep -qx 'anykernel.sh'
 unzip -Z1 "$PACKAGE" | grep -qx 'Image.gz-dtb'
 unzip -Z1 "$PACKAGE" | grep -qx 'tools/ak3-core.sh'
+unzip -Z1 "$PACKAGE" | grep -qx 'op6-hdr/COMPONENT_INFO.txt'
+unzip -Z1 "$PACKAGE" | grep -qx 'op6-hdr/README.zh-CN.txt'
 [ "$(unzip -p "$PACKAGE" Image.gz-dtb | sha256sum | cut -d' ' -f1)" = "$(sha256sum "$KERNEL_IMAGE" | cut -d' ' -f1)" ]
 (cd "$OUT_DIR" && sha256sum "$(basename "$PACKAGE")" > "$(basename "$PACKAGE").sha256")
 cp out/.config "$OUT_DIR/kernel.config"

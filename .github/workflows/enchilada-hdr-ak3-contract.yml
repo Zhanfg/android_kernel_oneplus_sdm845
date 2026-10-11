@@ -1,0 +1,38 @@
+name: OnePlus 6 HDR AK3 Contract QA
+on:
+  push:
+    branches:
+      - feature/enchilada-a17-hdr-ak3-bundle
+    paths:
+      - 'scripts/package-ak3.sh'
+      - 'scripts/package-op6-hdr-addon.sh'
+      - 'scripts/test-op6-hdr-ak3.py'
+      - '.github/workflows/enchilada-hdr-ak3-contract.yml'
+  pull_request:
+    paths:
+      - 'scripts/package-ak3.sh'
+      - 'scripts/package-op6-hdr-addon.sh'
+      - 'scripts/test-op6-hdr-ak3.py'
+      - '.github/workflows/enchilada-hdr-ak3-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  ak3-contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/package-ak3.sh
+            scripts/package-op6-hdr-addon.sh
+            scripts/test-op6-hdr-ak3.py
+          sparse-checkout-cone-mode: false
+      - name: Shell syntax
+        run: |
+          sh -n scripts/package-op6-hdr-addon.sh
+          sh -n scripts/package-ak3.sh
+      - name: AK3 HDR companion package contract
+        run: python3 -m unittest discover -s scripts -p 'test-op6-hdr-ak3.py' -v
