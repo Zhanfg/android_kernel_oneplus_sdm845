@@ -26,6 +26,12 @@
 #include <linux/vmalloc.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
+#ifdef CONFIG_REKERNEL
+#include <linux/sched/task.h>
+#include <linux/pid.h>
+#include "../rekernel/rekernel.h"
+static DEFINE_RATELIMIT_STATE(rekernel_overflow_rs, HZ, 3);
+#endif
 #include <linux/list_lru.h>
 #include <linux/ratelimit.h>
 #include <asm/cacheflush.h>
@@ -430,6 +436,26 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 				alloc->pid, extra_buffers_size);
 		return ERR_PTR(-EINVAL);
 	}
+
+#ifdef CONFIG_REKERNEL
+	/* Observability only: never alter Binder buffer accounting or eviction.
+	 * Hold a task reference across RCU unlock before reporting events.
+	 */
+	if (is_async && alloc->free_async_space < (1U << 17) &&
+	    __ratelimit(&rekernel_overflow_rs)) {
+		struct task_struct *target = NULL;
+		rcu_read_lock();
+		target = find_task_by_vpid(alloc->pid);
+		if (target)
+			get_task_struct(target);
+		rcu_read_unlock();
+		if (target) {
+			binder_overflow_handler(current->tgid, current,
+						target->tgid, target, true, NULL);
+			put_task_struct(target);
+		}
+	}
+#endif
 
 	/* Pad 0-size buffers so they get assigned unique addresses */
 	size = max(size, sizeof(void *));
