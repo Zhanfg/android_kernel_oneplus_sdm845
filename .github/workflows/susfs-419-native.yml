@@ -4,11 +4,6 @@ on:
   push:
     branches:
       - feature/enchilada-susfs230-native-419
-  pull_request:
-    paths:
-      - 'third_party/susfs/**'
-      - 'scripts/susfs-419/**'
-      - '.github/workflows/susfs-419-native.yml'
 permissions:
   contents: read
 concurrency:
