@@ -1,0 +1,71 @@
+name: SUSFS 2.3.0 non-GKI Linux 4.19 full VFS stage
+on:
+  push:
+    branches:
+      - wip/susfs230-path-419
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: susfs419stage-\${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile-all-native-vfs:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            bc bison flex build-essential libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+      - name: Restore pinned BakaSU with verified native compatibility bridge
+        run: sh scripts/setup-bakasu.sh
+      - name: Configure all native SUSFS 2.3.0 feature switches
+        shell: bash
+        run: |
+          set -euo pipefail
+          make O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          make O=out ARCH=arm64 CC=clang LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx 'CONFIG_SUSFS_NATIVE_419=y' out/.config
+          ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          for feature in PATH UNAME MOUNT KSTAT LOG HIDE_SYMBOLS CMDLINE OPEN_REDIRECT MAP; do
+            grep -qx "CONFIG_SUSFS_NATIVE_419_\${feature}=y" out/.config
+          done
+          mkdir -p dist
+          cp out/.config dist/enchilada-susfs-full.config
+      - name: Compile all native VFS kernel hook translation units
+        shell: bash
+        run: |
+          set -uo pipefail
+          targets=(
+            fs/susfs.o fs/namei.o fs/namespace.o fs/stat.o fs/statfs.o
+            fs/readdir.o fs/proc_namespace.o fs/read_write.o fs/super.o
+            fs/exec.o fs/open.o fs/proc/base.o fs/proc/fd.o
+            fs/proc/task_mmu.o fs/notify/fdinfo.o
+            kernel/reboot.o kernel/sys.o kernel/kallsyms.o
+            drivers/input/input.o mm/memory.o security/selinux/avc.o
+            security/selinux/hooks.o security/selinux/selinuxfs.o
+          )
+          make -j8 O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip LLVM=1 "\${targets[@]}" >dist/compiler.log 2>&1
+          rc=$?
+          echo "Object compiler exit=$rc"
+          grep -E -C 3 'error:|fatal error:|Error [0-9]|undefined reference|ld.lld: error' dist/compiler.log | tail -n 190 || :
+          tail -n 55 dist/compiler.log
+          exit "$rc"
+      - name: Upload compiler diagnostics (NOT a flashable image)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: susfs-230-full-vfs-419-compile-diagnostics
+          path: dist/
+          if-no-files-found: warn
+          retention-days: 14
