@@ -33,6 +33,25 @@ safe_command() {
     report "Kernel"
     uname -r
 
+    report "HDR Settings state (null = unset, not disabled)"
+    for name in hdr_brightness_enabled hdr_brightness_boost_level; do
+        printf '%s=' "$name"
+        settings get secure "$name" 2>/dev/null || echo "unavailable"
+    done
+    report "SurfaceFlinger HDR/wide color property declarations (not proof of output)"
+    for k in ro.surface_flinger.has_HDR_display \
+             ro.surface_flinger.has_wide_color_display \
+             ro.surface_flinger.use_color_management \
+             vendor.display.disable_hdr; do
+        prop "$k"
+    done
+    report "Android HDR / SDR ratio hints (missing = unknown)"
+    dumpsys display 2>/dev/null |
+        grep -i -E 'hdrsdr|hdr.sdr|hdr.*ratio|sdr.*ratio|hdr.*supported|hdr.*disabled|hdr.*conversion' |
+        head -n 75 || :
+    echo "Display.isHdrSdrRatioAvailable() must be checked by a framework API caller."
+    echo "An HDR formats list alone does NOT enable HDR brightness settings."
+
     safe_command "Display service (prefer capability modes)" dumpsys display
     safe_command "SurfaceFlinger display capability snapshot" dumpsys SurfaceFlinger --displays
     report "SurfaceFlinger short mode and HDR output"
