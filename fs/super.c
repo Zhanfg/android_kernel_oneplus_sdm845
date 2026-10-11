@@ -21,6 +21,7 @@
  *  Heavily rewritten for 'one fs - one tree' dcache architecture. AV, Mar 2000
  */
 
+#include <linux/susfs_native_419.h>
 #include <linux/export.h>
 #include <linux/slab.h>
 #include <linux/blkdev.h>
@@ -1100,6 +1101,11 @@ void emergency_thaw_all(void)
 
 static DEFINE_IDA(unnamed_dev_ida);
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+
 /**
  * get_anon_bdev - Allocate a block device for filesystems which don't have one.
  * @p: Pointer to a dev_t.
@@ -1114,6 +1120,22 @@ static DEFINE_IDA(unnamed_dev_ida);
 int get_anon_bdev(dev_t *p)
 {
 	int dev;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	if (static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted)) {
+		if (susfs_is_current_ksu_domain()) {
+			dev = ida_alloc_range(&unnamed_dev_ida, DEFAULT_KSU_MNT_MINOR_DEV, (1 << MINORBITS) - 1,
+				GFP_ATOMIC);
+			if (dev == -ENOSPC)
+				dev = -EMFILE;
+			if (dev < 0)
+				return dev;
+
+			*p = MKDEV(0, dev);
+			return 0;
+		}
+	}
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
 	/*
 	 * Many userspace utilities consider an FSID of 0 invalid.

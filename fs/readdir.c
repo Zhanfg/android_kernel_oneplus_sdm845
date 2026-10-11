@@ -5,6 +5,7 @@
  *  Copyright (C) 1995  Linus Torvalds
  */
 
+#include <linux/susfs_native_419.h>
 #include <linux/stddef.h>
 #include <linux/kernel.h>
 #include <linux/export.h>
@@ -119,6 +120,9 @@ struct old_linux_dirent {
 struct readdir_callback {
 	struct dir_context ctx;
 	struct old_linux_dirent __user * dirent;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	struct super_block *sb;
+#endif
 	int result;
 };
 
@@ -129,6 +133,9 @@ static int fillonedir(struct dir_context *ctx, const char *name, int namlen,
 		container_of(ctx, struct readdir_callback, ctx);
 	struct old_linux_dirent __user * dirent;
 	unsigned long d_ino;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	struct inode *inode;
+#endif
 
 	if (buf->result)
 		return -EINVAL;
@@ -387,6 +394,9 @@ struct compat_old_linux_dirent {
 struct compat_readdir_callback {
 	struct dir_context ctx;
 	struct compat_old_linux_dirent __user *dirent;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	struct super_block *sb;
+#endif
 	int result;
 };
 
@@ -398,6 +408,9 @@ static int compat_fillonedir(struct dir_context *ctx, const char *name,
 		container_of(ctx, struct compat_readdir_callback, ctx);
 	struct compat_old_linux_dirent __user *dirent;
 	compat_ulong_t d_ino;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	struct inode *inode;
+#endif
 
 	if (buf->result)
 		return -EINVAL;
