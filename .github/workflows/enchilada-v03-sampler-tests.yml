@@ -1,0 +1,27 @@
+name: OP6 v0.3 Residency sampler host tests
+on:
+  push:
+    branches:
+      - experiment/enchilada-a17-v03-early-schedutil
+    paths:
+      - 'tools/OP6_Kernel_v03_Residency_ReadOnly.sh'
+      - 'tools/OP6_Residency_Analyze_v03.py'
+      - 'tools/test_residency_analyzer.py'
+      - '.github/workflows/enchilada-v03-sampler-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and analyzer tests
+        run: |
+          set -euo pipefail
+          sh -n tools/OP6_Kernel_v03_Residency_ReadOnly.sh
+          python3 -m py_compile tools/OP6_Residency_Analyze_v03.py
+          python3 tools/test_residency_analyzer.py
+          grep -Fq 'time_in_state' tools/OP6_Kernel_v03_Residency_ReadOnly.sh
+          grep -Fq '/proc/pressure/' tools/OP6_Kernel_v03_Residency_ReadOnly.sh
+          echo 'No boot/kernel modifications; host checks only.'
