@@ -76,7 +76,7 @@ guard="""\
   abort "HDR requires Vendor mounted read-only in recovery; aborting before boot modification";
 [ -d /data/adb ] && [ -d /data/data/android ] ||
   abort "HDR requires unlocked /data and KernelSU/Magisk module access";
-[ -e /data/adb/ksud ] || [ -d /data/adb/magisk ] || [ -d /data/data/me.weishu.kernelsu ] ||
+[ -d /data/adb/magisk ] || [ -d /data/data/me.weishu.kernelsu ] ||
   abort "HDR requires an initialized KernelSU/Magisk installation";
 [ ! -d /data/adb/modules/ak3-helper ] ||
   abort "Existing AK3 helper module: manual conflict review required";
