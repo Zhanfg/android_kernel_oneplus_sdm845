@@ -1,0 +1,50 @@
+name: OnePlus 6 SUSFS 2.3.0 native 4.19 integration
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/enchilada-susfs230-native-419
+  pull_request:
+    paths:
+      - 'third_party/susfs/**'
+      - 'scripts/susfs-419/**'
+      - '.github/workflows/susfs-419-native.yml'
+permissions:
+  contents: read
+concurrency:
+  group: susfs-native-419-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  legacy-kernel-patch-preflight:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          sparse-checkout: |
+            fs
+            include
+            kernel
+            security
+            arch
+            third_party/susfs
+            scripts/susfs-419
+          sparse-checkout-cone-mode: true
+      - name: Check both GitLab source baselines
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '#define SUSFS_VERSION "v1.5.5"' third_party/susfs/legacy-4.19/susfs.h
+          grep -q '#define SUSFS_VERSION "v2.3.0"' third_party/susfs/upstream-v2.3.0/susfs.h
+          grep -q '^VERSION = 4$' Makefile || true
+          python3 scripts/susfs-419/native_preflight.py --source . --report susfs-419-preflight.txt
+      - name: Publish audit report (no flashable build)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: susfs-419-native-preflight
+          path: susfs-419-preflight.txt
+          if-no-files-found: warn
+          retention-days: 14
