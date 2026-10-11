@@ -70,7 +70,26 @@ jobs:
           grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
           ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
           set +e
-          make -j2 "${MAKE_ARGS[@]}" fs/susfs.o > susfs-419-compile.log 2>&1
+          # Compile all v2.3.0 SUSFS core feature paths for ABI/API coverage
+          # without changing BakaSU's running/manual-hook Kconfig choice.
+          # This is a single-object compile experiment, NOT an active kernel config.
+          SUSFS_TEST_FEATURES=(
+            CONFIG_KSU_SUSFS_SUS_PATH
+            CONFIG_KSU_SUSFS_SUS_MOUNT
+            CONFIG_KSU_SUSFS_SUS_KSTAT
+            CONFIG_KSU_SUSFS_SPOOF_UNAME
+            CONFIG_KSU_SUSFS_ENABLE_LOG
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT
+            CONFIG_KSU_SUSFS_SUS_MAP
+          )
+          CFLAGS_STRING=""
+          for feature in "${SUSFS_TEST_FEATURES[@]}"; do
+            CFLAGS_STRING+=" -D${feature}=1"
+          done
+          echo "Compiling SUSFS core with all native feature paths enabled (KCFLAGS only)."
+          make -j2 "${MAKE_ARGS[@]}" KCFLAGS="$CFLAGS_STRING" fs/susfs.o > susfs-419-compile.log 2>&1
           rc=$?
           set -e
           echo "Compiler exit: $rc"
