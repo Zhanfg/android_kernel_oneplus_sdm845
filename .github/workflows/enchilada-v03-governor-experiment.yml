@@ -91,6 +91,13 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz-dtb
           test -s out/.config
           python3 scripts/verify-appended-dtbs.py out/arch/arm64/boot/Image.gz-dtb
+          # Enforce EXACT DTB hashes and ROM order from the user-booted v0.2 image.
+          # Upstream make's appended order is NOT the phone's; always normalize.
+          python3 scripts/test_normalize_enchilada_dtbs.py
+          mkdir -p dist
+          sha256sum out/arch/arm64/boot/Image.gz-dtb > dist/v03-kernel-before-romorder.sha256
+          python3 scripts/normalize_enchilada_dtbs.py out/arch/arm64/boot/Image.gz-dtb --in-place
+          python3 scripts/normalize_enchilada_dtbs.py out/arch/arm64/boot/Image.gz-dtb
           mkdir -p dist
           cp out/.config dist/v03-kernel.config
           cp out/arch/arm64/boot/Image.gz-dtb dist/v03-Image.gz-dtb

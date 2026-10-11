@@ -20,6 +20,7 @@ jobs:
         run: |
           set -euo pipefail
           sh -n tools/OP6_Kernel_v03_Residency_ReadOnly.sh
+          python3 scripts/test_normalize_enchilada_dtbs.py
           python3 -m py_compile tools/OP6_Residency_Analyze_v03.py
           python3 tools/test_residency_analyzer.py
           grep -Fq 'time_in_state' tools/OP6_Kernel_v03_Residency_ReadOnly.sh
