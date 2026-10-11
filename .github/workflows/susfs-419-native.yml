@@ -43,3 +43,47 @@ jobs:
           path: susfs-419-preflight.txt
           if-no-files-found: warn
           retention-days: 14
+
+  core-compile-smoke:
+    if: contains(github.event.head_commit.message, '[smoke]') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install 4.19 compiler dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex build-essential libssl-dev libelf-dev clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+      - name: Setup exact pinned BakaSU
+        run: sh scripts/setup-bakasu.sh
+      - name: Try compiling GitLab v2.3.0 native core (NOT a kernel image)
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          ! grep -qx 'CONFIG_KSU_SUSFS=y' out/.config
+          set +e
+          make -j2 "${MAKE_ARGS[@]}" fs/susfs.o > susfs-419-compile.log 2>&1
+          rc=$?
+          set -e
+          echo "Compiler exit: $rc"
+          tail -n 110 susfs-419-compile.log
+          echo "Full log is an artifact; no boot image generated."
+          exit "$rc"
+      - name: Upload compiler output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: susfs-v230-linux-419-core-compiler-output
+          path: |
+            susfs-419-compile.log
+            out/.config
+          if-no-files-found: warn
+          retention-days: 14
