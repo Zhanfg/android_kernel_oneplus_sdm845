@@ -52,11 +52,13 @@ jobs:
             drivers/input/input.o mm/memory.o security/selinux/avc.o
             security/selinux/hooks.o security/selinux/selinuxfs.o
           )
+          set +e
           make -j8 O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld \
             AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
             STRIP=llvm-strip LLVM=1 "${targets[@]}" >dist/compiler.log 2>&1
           rc=$?
+          set -e
           echo "Object compiler exit=$rc"
           grep -E -C 3 'error:|fatal error:|Error [0-9]|undefined reference|ld.lld: error' dist/compiler.log | tail -n 190 || :
           tail -n 55 dist/compiler.log
