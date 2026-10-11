@@ -20,25 +20,30 @@ root = p.parent.parent
 for relative in ("supercall/supercall.c", "supercall/dispatch.c"):
     f = root / relative
     text = f.read_text()
-    expected = 3 if relative == "supercall/supercall.c" else 2
-    guard = "#ifdef CONFIG_KSU_SUSFS"
+    guard = "#ifdef CONFIG_KSU_SUSFS\n"
+    # Match an ENTIRE preprocessor line. Substring replacement would corrupt
+    # CONFIG_KSU_SUSFS_* leaf-feature names.
+    expected = 3 if relative == "supercall/supercall.c" else 3
     if text.count(guard) != expected:
-        raise SystemExit(f"Pinned BakaSU {relative} SUSFS guards changed")
-    text = text.replace(guard,
-       "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)")
-    # Translation header is local to these two sources, not global:
-    # BakaSU's original Kconfig hook-mode selector stays untouched.
-    text = "#include <linux/susfs_native_419.h>\n" + text
+        raise SystemExit(f"Pinned BakaSU {relative} exact SUSFS guards changed")
     if relative == "supercall/supercall.c":
+        text = text.replace(guard,
+           "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n")
         key = "#if !defined(CONFIG_KSU_TOOLKIT_SUPPORT) && !defined(CONFIG_KSU_SUSFS)"
         if text.count(key) != 1:
             raise SystemExit("Pinned BakaSU supercall early-return changed")
         text = text.replace(key,
-            "#if !defined(CONFIG_KSU_TOOLKIT_SUPPORT) && !defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_SUSFS_NATIVE_419)")
+           "#if !defined(CONFIG_KSU_TOOLKIT_SUPPORT) && !defined(CONFIG_KSU_SUSFS) && !defined(CONFIG_SUSFS_NATIVE_419)")
     else:
-        needle = "#include <linux/susfs_def.h>\n"
-        if text.count(needle) != 1:
-            raise SystemExit("Pinned BakaSU dispatch SUSFS header changed")
-        text = text.replace(needle, needle + "#include <linux/susfs.h>\n")
+        inc = "#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs_def.h>\n"
+        cmd = "#ifdef CONFIG_KSU_SUSFS\nint ksu_handle_susfs_cmd("
+        if text.count(inc) != 1 or text.count(cmd) != 1:
+            raise SystemExit("Pinned BakaSU dispatch SUSFS layout changed")
+        # Keep the unrelated sdcard monitoring start in its original hook mode.
+        text = text.replace(inc,
+           "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\n#include <linux/susfs_def.h>\n#include <linux/susfs.h>\n", 1)
+        text = text.replace(cmd,
+           "#if defined(CONFIG_KSU_SUSFS) || defined(CONFIG_SUSFS_NATIVE_419)\nint ksu_handle_susfs_cmd(", 1)
+    # Header is local: no Kconfig selector or other root hook is changed.
+    text = "#include <linux/susfs_native_419.h>\n" + text
     f.write_text(text)
-
