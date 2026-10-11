@@ -62,8 +62,12 @@ section() { printf '\n[%s]\n' "$1"; }
       readval "$st/time" "$st/time"
     done
   done
+  # cpu-boost.c registers a kobject under the CPU subsystem.
+  # /sys/module/cpu_boost/parameters is not its primary interface.
   for n in input_boost_ms input_boost_freq sched_boost_on_input; do
-    readval "cpu_boost/$n" "/sys/module/cpu_boost/parameters/$n"
+    f="/sys/devices/system/cpu/cpu_boost/$n"
+    [ -r "$f" ] || f="/sys/module/cpu_boost/parameters/$n"
+    readval "cpu_boost/$n" "$f"
   done
   section gpu
   for n in gpuclk max_gpuclk idle_timer gpu_busy_percentage; do
@@ -72,6 +76,23 @@ section() { printf '\n[%s]\n' "$1"; }
   for n in governor cur_freq min_freq max_freq; do
     readval "kgsl/devfreq/$n" "/sys/class/kgsl/kgsl-3d0/devfreq/$n"
   done
+  section "UFS link power"
+  found_ufs=0
+  for u in /sys/bus/platform/devices/*ufshc*; do
+    [ -e "$u" ] || continue
+    found_ufs=1
+    echo "ufs controller: ${u##*/}"
+    for n in clkgate_enable clkgate_delay_ms_perf clkgate_delay_ms_pwr_save \
+        hibern8_on_idle_enable hibern8_on_idle_delay_ms runtime_status; do
+      if [ "$n" = runtime_status ]; then
+        readval "ufs/$n" "$u/power/$n"
+      else
+        readval "ufs/$n" "$u/$n"
+      fi
+    done
+  done
+  [ "$found_ufs" -eq 1 ] || echo "UFS sysfs nodes not present at platform-device path"
+  echo "Do not force auto-Hibern8: controller may advertise a hardware quirk."
   section display
   readval drm_status /sys/class/drm/card0-DSI-1/status
   for d in /sys/kernel/debug/dri/*; do
