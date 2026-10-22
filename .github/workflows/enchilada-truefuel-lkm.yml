@@ -71,7 +71,22 @@ jobs:
           assert 'OP6_TRUEFUEL_NATIVE_READONLY' in native
           assert 'device_create_file(&client->dev, &dev_attr_op6_truefuel_hw)' in native
           assert 'device_remove_file(&client->dev, &dev_attr_op6_truefuel_hw)' in native
+          # Regression guard: request must be checked, safety gated and
+          # consumed in that order. Do not lose pending samples in Dash.
+          read = native.index('if (!atomic_read(&op6_truefuel_snapshot_request))')
+          guard = native.index('if (di->device_type != DEVICE_BQ27411', read)
+          consume = native.index('if (!atomic_xchg(&op6_truefuel_snapshot_request, 0))', guard)
+          capture = native.index('bq27541_read(BQ27411_REG_SOC', consume)
+          assert read < guard < consume < capture
+          probe = Path('tools/battery/truefuel/OP6_TrueFuel_Native_Check_v0.5.sh').read_text()
+          assert probe.startswith('#!/system/bin/sh')
+          assert 'TF_TEST_ROOT' in probe and 'native_soc_unfiltered_pct' in probe
+          assert 'temp' in probe and '420' in probe
+          for bad in ('/dev/i2c', 'i2cset', 'i2c_transfer', 'insmod',
+                      'fastchg_current_max=', '/sys/class/power_supply/battery/input_suspend='):
+              assert bad not in probe, bad
           PY
+          sh -n tools/battery/truefuel/OP6_TrueFuel_Native_Check_v0.5.sh
           make -j"$(nproc)" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs
           make -j"$(nproc)" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb
           test -s out/Module.symvers
