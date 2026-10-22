@@ -9,7 +9,6 @@ on:
       - 'drivers/power/supply/qcom/bq27541_fuelgauger.c'
       - 'arch/arm64/boot/dts/qcom/enchilada.dtsi'
       - '.github/workflows/enchilada-truefuel-e72-integration.yml'
-      - '.github/workflows/enchilada-truefuel-e72-integration.yml'
   workflow_dispatch:
 
 permissions:
@@ -115,7 +114,7 @@ jobs:
             'Running phone observed: 4.19.325-cip136-st20-perf-ge72e381426f8-dirty' \
             "CI built: $(cat out/include/config/kernel.release)" \
             "Source commit: $GITHUB_SHA" > dist/ABI_NOTICE.txt
-      - name: Upload read-only LKM for manual testing
+      - name: Upload compile-only diagnostics (DO NOT install)
         uses: actions/upload-artifact@v4
         with:
           name: op6-truefuel-e72-integration-COMPILE-ONLY
