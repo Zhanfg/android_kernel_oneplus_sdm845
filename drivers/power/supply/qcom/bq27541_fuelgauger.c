@@ -95,6 +95,13 @@
 #define BQ27411_REG_SOC                 0x1c
 #define BQ27411_REG_HEALTH              0x20
 #define BQ27411_REG_FCC                 0xE
+/* OP6_TRUEFUEL_NATIVE_READONLY: standard BQ27411-G1 register commands.
+ * Reads only; DataFlash, ChemID and charging controls are NOT modified.
+ */
+#define BQ27411_REG_RM_UNFILTERED       0x28
+#define BQ27411_REG_FCC_UNFILTERED      0x2c
+#define BQ27411_REG_SOC_UNFILTERED      0x30
+
 #define BQ27411_REG_OVER_TEMP           0x40
 #define BQ27411_REG_GET_OVER_TEMP_EN    0x0002
 
@@ -236,6 +243,8 @@ struct bq27541_device_info {
 	int current_pre;
 	int dcap_pre;
 	int fcc_pre;
+	/* Last confirmed gauge RemainingCapacity(), in mAh. */
+	int rm_pre;
 	int health_pre;
 	int get_over_temp;
 	unsigned long rtc_resume_time;
@@ -295,6 +304,145 @@ static int bq27541_read(u8 reg, int *rt_value, int b_single,
 {
 	return di->bus->read(reg, rt_value, b_single, di);
 }
+
+#ifdef CONFIG_GAUGE_BQ27411
+/*
+ * TrueFuel demand-driven diagnostics. Sysfs only requests a snapshot, never
+ * talks to I2C directly. The existing OEM discharge polling work performs
+ * the reads while allow_reading is already enabled and Dash is inactive.
+ *
+ * No periodic extra work is scheduled. A normal read that is less than one
+ * minute old does not request new I2C traffic. Battery HAL values are intact.
+ */
+struct op6_truefuel_snapshot {
+	int soc, soc_unfiltered, rm, rm_unfiltered;
+	int fcc, fcc_unfiltered, design_capacity;
+	unsigned long sampled_at;
+	bool valid;
+};
+
+static DEFINE_MUTEX(op6_truefuel_snapshot_mutex);
+static atomic_t op6_truefuel_snapshot_request = ATOMIC_INIT(0);
+static struct op6_truefuel_snapshot op6_truefuel_latest;
+
+static void op6_truefuel_capture(struct bq27541_device_info *di)
+{
+	struct op6_truefuel_snapshot next = { 0 };
+	int ret;
+
+	/* Preserve the one-shot request when the existing poll cannot safely
+	 * touch the gauge. The old atomic_xchg() above these checks silently
+	 * lost requests during Dash and DataFlash smoothing transitions.
+	 */
+	if (!atomic_read(&op6_truefuel_snapshot_request))
+		return;
+
+	/* Only the normal discharge poll may sample; charging, suspend and
+	 * firmware/DataFlash activity never gain an alternative I2C path.
+	 */
+	if (di->device_type != DEVICE_BQ27411 ||
+	    atomic_read(&di->suspended) || !READ_ONCE(di->allow_reading) ||
+	    READ_ONCE(di->fastchg_started) || READ_ONCE(di->set_smoothing) ||
+	    (di->modify_soc_smooth && !READ_ONCE(di->already_modify_smooth)))
+		return;
+
+	/* Consume at most one request after passing all safety guards.
+	 * No retry loop, timer, wakeup or additional polling is scheduled.
+	 */
+	if (!atomic_xchg(&op6_truefuel_snapshot_request, 0))
+		return;
+
+	ret = bq27541_read(BQ27411_REG_SOC, &next.soc, 0, di);
+	if (ret)
+		return;
+	ret = bq27541_read(BQ27411_REG_SOC_UNFILTERED,
+			  &next.soc_unfiltered, 0, di);
+	if (ret)
+		return;
+	ret = bq27541_read(BQ27411_REG_RM, &next.rm, 0, di);
+	if (ret)
+		return;
+	ret = bq27541_read(BQ27411_REG_RM_UNFILTERED,
+			  &next.rm_unfiltered, 0, di);
+	if (ret)
+		return;
+	ret = bq27541_read(BQ27411_REG_FCC, &next.fcc, 0, di);
+	if (ret)
+		return;
+	ret = bq27541_read(BQ27411_REG_FCC_UNFILTERED,
+			  &next.fcc_unfiltered, 0, di);
+	if (ret)
+		return;
+	ret = bq27541_read(BQ27541_REG_DCAP, &next.design_capacity, 0, di);
+	if (ret)
+		return;
+
+	if (next.soc < 0 || next.soc > 100 ||
+	    next.soc_unfiltered < 0 || next.soc_unfiltered > 100 ||
+	    next.rm < 0 || next.rm > 15000 ||
+	    next.rm_unfiltered < 0 || next.rm_unfiltered > 15000 ||
+	    next.fcc < 1 || next.fcc > 15000 ||
+	    next.fcc_unfiltered < 1 || next.fcc_unfiltered > 15000 ||
+	    next.design_capacity < 1 || next.design_capacity > 15000)
+		return;
+
+	next.sampled_at = jiffies;
+	next.valid = true;
+	mutex_lock(&op6_truefuel_snapshot_mutex);
+	op6_truefuel_latest = next;
+	mutex_unlock(&op6_truefuel_snapshot_mutex);
+}
+
+static ssize_t op6_truefuel_hw_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	struct bq27541_device_info *di = dev_get_drvdata(dev);
+	struct op6_truefuel_snapshot snap;
+	unsigned long age;
+	bool stale;
+
+	if (!di || !di->bus || !di->client)
+		return -ENODEV;
+	if (di->device_type != DEVICE_BQ27411)
+		return -EOPNOTSUPP;
+
+	mutex_lock(&op6_truefuel_snapshot_mutex);
+	snap = op6_truefuel_latest;
+	mutex_unlock(&op6_truefuel_snapshot_mutex);
+
+	stale = !snap.valid ||
+		time_after(jiffies, snap.sampled_at + 60 * HZ);
+	if (stale)
+		atomic_set(&op6_truefuel_snapshot_request, 1);
+
+	if (!snap.valid)
+		return scnprintf(buf, PAGE_SIZE,
+				 "status=pending\n"
+				 "source=normal_discharge_poll_only\n"
+				 "retry_after_seconds=12\n");
+
+	age = jiffies_to_msecs(jiffies - snap.sampled_at) / 1000;
+	return scnprintf(buf, PAGE_SIZE,
+			 "status=%s\n"
+			 "source=normal_discharge_poll_only\n"
+			 "age_seconds=%lu\n"
+			 "soc_filtered_pct=%d\n"
+			 "soc_unfiltered_pct=%d\n"
+			 "remaining_mAh=%d\n"
+			 "remaining_unfiltered_mAh=%d\n"
+			 "fcc_mAh=%d\n"
+			 "fcc_unfiltered_mAh=%d\n"
+			 "design_capacity_mAh=%d\n",
+			 stale ? "stale" : "fresh", age,
+			 snap.soc, snap.soc_unfiltered,
+			 snap.rm, snap.rm_unfiltered,
+			 snap.fcc, snap.fcc_unfiltered,
+			 snap.design_capacity);
+}
+
+/* Root-only diagnostic read, not a new control or public battery property. */
+static DEVICE_ATTR(op6_truefuel_hw, 0400, op6_truefuel_hw_show, NULL);
+#endif
 
 /*
  * Return the battery temperature in tenths of degree Celsius
@@ -922,7 +1070,7 @@ static int bq27541_remaining_capacity(struct bq27541_device_info *di)
 
 	if (di->allow_reading) {
 #ifdef CONFIG_GAUGE_BQ27411
-		/* david.liu@bsp, 20161004 Add BQ27411 support */
+		/* OEM BQ27411 register map. */
 		ret = bq27541_read(di->cmd_addr.reg_rm,
 				&cap, 0, di);
 #else
@@ -932,9 +1080,13 @@ static int bq27541_remaining_capacity(struct bq27541_device_info *di)
 			pr_err("error reading capacity.\n");
 			return ret;
 		}
+		/* Do not report fabricated 0 mAh when reads are disabled.
+		 * Keep the last successfully read RemainingCapacity() value.
+		 */
+		WRITE_ONCE(di->rm_pre, cap);
 	}
 
-	return cap;
+	return READ_ONCE(di->rm_pre);
 }
 
 static int bq27541_full_chg_capacity(struct bq27541_device_info *di)
@@ -1270,6 +1422,9 @@ static void update_battery_soc_work(struct work_struct *work)
 	pr_debug("battery remain capacity:%d\n",
 				bq27541_get_batt_health());
 	bq27541_get_batt_full_chg_capacity();
+#ifdef CONFIG_GAUGE_BQ27411
+	op6_truefuel_capture(bq27541_di);
+#endif
 	bq27541_set_allow_reading(false);
 	bq27541_temperature_thrshold_update(temp);
 	if (!bq27541_di->already_modify_smooth)
@@ -1453,7 +1608,10 @@ static int bq27541_read_i2c(u8 reg, int *rt_value, int b_single,
 		msg[1].len = 1;
 	msg[1].buf = data;
 	err = i2c_transfer(client->adapter, msg, 2);
-	if (err >= 0) {
+	/* Both command-pointer and data phases must succeed.  A partial
+	 * transfer previously passed as success with uninitialized data.
+	 */
+	if (err == 2) {
 		if (!b_single)
 			*rt_value = get_unaligned_le16(data);
 		else
@@ -1462,7 +1620,7 @@ static int bq27541_read_i2c(u8 reg, int *rt_value, int b_single,
 		return 0;
 	}
 	mutex_unlock(&battery_mutex);
-	return err;
+	return err < 0 ? err : -EIO;
 }
 
 #ifdef CONFIG_BQ27541_TEST_ENABLE
@@ -2080,6 +2238,12 @@ static int bq27541_battery_probe(struct i2c_client *client,
 	else {
 		pr_info("probe success battery not exist \n");
 	}
+#ifdef CONFIG_GAUGE_BQ27411
+	/* Diagnostics may fail independently; never fail battery probe. */
+	retval = device_create_file(&client->dev, &dev_attr_op6_truefuel_hw);
+	if (retval)
+		dev_warn(&client->dev, "TrueFuel read-only node unavailable: %d\n", retval);
+#endif
 	return 0;
 
 batt_failed_4:
@@ -2100,6 +2264,9 @@ static int bq27541_battery_remove(struct i2c_client *client)
 {
 	struct bq27541_device_info *di = i2c_get_clientdata(client);
 
+#ifdef CONFIG_GAUGE_BQ27411
+	device_remove_file(&client->dev, &dev_attr_op6_truefuel_hw);
+#endif
 	external_battery_gauge_unregister(&bq27541_batt_gauge);
 	bq27541_information_unregister(&bq27541_batt_gauge);
 	bq27541_cntl_cmd(di, BQ27541_SUBCMD_DISABLE_DLOG);
