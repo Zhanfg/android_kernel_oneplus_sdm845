@@ -330,16 +330,26 @@ static void op6_truefuel_capture(struct bq27541_device_info *di)
 	struct op6_truefuel_snapshot next = { 0 };
 	int ret;
 
-	if (!atomic_xchg(&op6_truefuel_snapshot_request, 0))
+	/* Preserve the one-shot request when the existing poll cannot safely
+	 * touch the gauge. The old atomic_xchg() above these checks silently
+	 * lost requests during Dash and DataFlash smoothing transitions.
+	 */
+	if (!atomic_read(&op6_truefuel_snapshot_request))
 		return;
 
-	/* Polling work is only allowed to sample the unpowered/normal path.
-	 * Fail closed while the Dash MCU or DataFlash smoothing owns the gauge.
+	/* Only the normal discharge poll may sample; charging, suspend and
+	 * firmware/DataFlash activity never gain an alternative I2C path.
 	 */
 	if (di->device_type != DEVICE_BQ27411 ||
 	    atomic_read(&di->suspended) || !READ_ONCE(di->allow_reading) ||
 	    READ_ONCE(di->fastchg_started) || READ_ONCE(di->set_smoothing) ||
 	    (di->modify_soc_smooth && !READ_ONCE(di->already_modify_smooth)))
+		return;
+
+	/* Consume at most one request after passing all safety guards.
+	 * No retry loop, timer, wakeup or additional polling is scheduled.
+	 */
+	if (!atomic_xchg(&op6_truefuel_snapshot_request, 0))
 		return;
 
 	ret = bq27541_read(BQ27411_REG_SOC, &next.soc, 0, di);
