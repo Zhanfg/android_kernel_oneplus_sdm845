@@ -1,0 +1,182 @@
+name: OP6 TrueFuel e72 AK3 Experimental and Kernel ABI Gates
+
+on:
+  push:
+    branches:
+      - feature/enchilada-truefuel-e72-integration
+    paths:
+      - 'tools/battery/truefuel/**'
+      - 'drivers/power/supply/qcom/bq27541_fuelgauger.c'
+      - 'arch/arm64/boot/dts/qcom/enchilada.dtsi'
+      - '.github/workflows/enchilada-truefuel-e72-integration.yml'
+      - 'scripts/package-ak3.sh'
+      - 'scripts/normalize_enchilada_dtbs.py'
+      - 'scripts/verify-appended-dtbs.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: enchilada-truefuel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Install 4.19 ARM64 compiler dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison flex build-essential zip unzip \
+            libssl-dev libelf-dev clang lld llvm ccache gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi device-tree-compiler cpio kmod
+      - name: Prepare BakaSU and exact kernel config
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/setup-bakasu.sh
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip LLVM=1)
+          make "${MAKE_ARGS[@]}" vendor/sdm845-perf_defconfig
+          sh scripts/kconfig/merge_config.sh -m -O out out/.config arch/arm64/configs/vendor/enchilada.config arch/arm64/configs/vendor/enchilada-perf-experimental.config
+          make "${MAKE_ARGS[@]}" olddefconfig
+          grep -qx 'CONFIG_MODULES=y' out/.config
+          grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+          grep -qx '# CONFIG_MODULE_SIG is not set' out/.config
+          grep -qx '# CONFIG_KPROBES is not set' out/.config
+          grep -qx 'CONFIG_KSU=y' out/.config
+          grep -qx 'CONFIG_KSU_MANUAL_HOOK=y' out/.config
+          grep -qx 'CONFIG_REKERNEL=y' out/.config
+          grep -qx 'CONFIG_CPU_FREQ_DEFAULT_GOV_SCHEDUTIL=y' out/.config
+          grep -qx '# CONFIG_REKERNEL_NETWORK is not set' out/.config
+          grep -qx '# CONFIG_KSU_SUSFS is not set' out/.config
+          for option in MQ_IOSCHED_DEADLINE MQ_IOSCHED_KYBER NET_SCH_FQ_CODEL NET_SCH_FQ TCP_CONG_BBR IP_SET IP_SET_HASH_IP IP_SET_HASH_NET IP_SET_HASH_IPPORT IP_SET_HASH_NETPORT IP_SET_LIST_SET NETFILTER_XT_SET NET_EMATCH_IPSET; do
+            grep -qx "CONFIG_${option}=y" out/.config || { echo "::error::Missing ${option}=y"; exit 1; }
+          done
+      - name: Build kernel and Versioned LKM
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAKE_ARGS=(O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=clang LD=ld.lld \
+            AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip LLVM=1)
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('tools/battery/truefuel/op6_truefuel.c').read_text()
+          assert 'POWER_SUPPLY_PROP_BQ_SOC' in text
+          assert 'POWER_SUPPLY_PROP_REMAINING_CAPACITY' in text
+          assert 'hardware_soc_path=' in text
+          for bad in ('i2c_transfer', 'i2c_get_adapter', 'i2c_master_send',
+                      'i2c_smbus_write', 'BQ27411_UNSEAL_KEY', 'module_param'):
+              assert bad not in text, bad
+          native = Path('drivers/power/supply/qcom/bq27541_fuelgauger.c').read_text()
+          assert 'OP6_TRUEFUEL_NATIVE_READONLY' in native
+          assert 'device_create_file(&client->dev, &dev_attr_op6_truefuel_hw)' in native
+          assert 'device_remove_file(&client->dev, &dev_attr_op6_truefuel_hw)' in native
+          # Regression guard: request must be checked, safety gated and
+          # consumed in that order. Do not lose pending samples in Dash.
+          read = native.index('if (!atomic_read(&op6_truefuel_snapshot_request))')
+          guard = native.index('if (di->device_type != DEVICE_BQ27411', read)
+          consume = native.index('if (!atomic_xchg(&op6_truefuel_snapshot_request, 0))', guard)
+          capture = native.index('bq27541_read(BQ27411_REG_SOC', consume)
+          assert read < guard < consume < capture
+          probe = Path('tools/battery/truefuel/OP6_TrueFuel_Native_Check_v0.5.sh').read_text()
+          assert probe.startswith('#!/system/bin/sh')
+          assert 'TF_TEST_ROOT' in probe and 'native_soc_unfiltered_pct' in probe
+          assert 'temp' in probe and '420' in probe
+          for bad in ('/dev/i2c', 'i2cset', 'i2c_transfer', 'insmod',
+                      'fastchg_current_max=', '/sys/class/power_supply/battery/input_suspend='):
+              assert bad not in probe, bad
+          PY
+          sh -n tools/battery/truefuel/OP6_TrueFuel_Native_Check_v0.5.sh
+          sh -n tools/battery/truefuel/OP6_TrueFuel_Backup_Boot_v0.1.sh
+          sh -n scripts/package-ak3.sh
+          python3 scripts/test_normalize_enchilada_dtbs.py
+          python3 scripts/test-bakasu-manager-discovery.py
+          make -j"$(nproc)" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ dtbs
+          make -j"$(nproc)" "${MAKE_ARGS[@]}" DTC_FLAGS=-@ Image.gz-dtb
+          test -s out/arch/arm64/boot/Image.gz-dtb
+          # Exact 3-DTB ROM-backed fingerprints and order; fail closed on mismatch.
+          python3 scripts/verify-appended-dtbs.py out/arch/arm64/boot/Image.gz-dtb
+          python3 scripts/normalize_enchilada_dtbs.py out/arch/arm64/boot/Image.gz-dtb --in-place
+          python3 scripts/normalize_enchilada_dtbs.py out/arch/arm64/boot/Image.gz-dtb
+          test -s out/Module.symvers
+          make -j2 "${MAKE_ARGS[@]}" M="${GITHUB_WORKSPACE}/tools/battery/truefuel" modules
+          KO=tools/battery/truefuel/op6_truefuel.ko
+          test -s "$KO"
+          file "$KO"
+          readelf -h "$KO" | grep -E 'ELF64|AArch64'
+          modinfo -F vermagic "$KO"
+          modinfo -F depends "$KO"
+          echo "Kernel release: $(cat out/include/config/kernel.release)"
+          modinfo -F vermagic "$KO" | grep -F "$(cat out/include/config/kernel.release)"
+          mkdir -p dist
+          cp "$KO" dist/
+          cp out/arch/arm64/boot/Image.gz-dtb dist/Image.gz-dtb
+          sha256sum out/arch/arm64/boot/Image.gz-dtb > dist/IMAGE_SHA256SUMS.txt
+          cp out/include/config/kernel.release dist/kernel.release
+          cp out/.config dist/compiled-kernel.config
+          sha256sum "$KO" > dist/SHA256SUMS
+          printf '%s\n' \
+            'INTEGRATION COMPILATION ONLY - NOT FLASHABLE, NOT PHONE TESTED.' \
+            'This kernel has changes after e72e381426f8 and a NEW kernel release.' \
+            'Do not insmod the KO on the currently running ge72e381426f8 kernel.' \
+            'Native gauge reads require a matching new boot-tested kernel.' \
+            'No battery capacity, DataFlash, charge current or thermals changed.' > dist/SAFETY.txt
+          printf '%s\n' \
+            'Running phone observed: 4.19.325-cip136-st20-perf-ge72e381426f8-dirty' \
+            "CI built: $(cat out/include/config/kernel.release)" \
+            "Source commit: $GITHUB_SHA" > dist/ABI_NOTICE.txt
+      - name: Package experimental AK3 and verify fail-closed output
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/package-ak3.sh
+          AK3="$(find dist -maxdepth 1 -type f -name '*_EXPERIMENTAL_*.zip' -print -quit)"
+          test -n "$AK3"
+          unzip -tqq "$AK3"
+          # The exact build must be inside the ZIP; do not substitute old images.
+          expected="$(sha256sum out/arch/arm64/boot/Image.gz-dtb | cut -d' ' -f1)"
+          actual="$(unzip -p "$AK3" Image.gz-dtb | sha256sum | cut -d' ' -f1)"
+          test "$expected" = "$actual"
+          unzip -Z1 "$AK3" | grep -qx anykernel.sh
+          unzip -Z1 "$AK3" | grep -qx tools/ak3-core.sh
+          unzip -p "$AK3" anykernel.sh | grep -qx 'do.devicecheck=1'
+          unzip -p "$AK3" anykernel.sh | grep -qx 'do.modules=0'
+          unzip -p "$AK3" anykernel.sh | grep -qx 'device.name1=enchilada'
+          unzip -p "$AK3" anykernel.sh | grep -qx 'BLOCK=boot;'
+          # This is NOT a calibration flash, and it must not edit safety limits.
+          grep -q 'OP6_TRUEFUEL_NATIVE_READONLY' drivers/power/supply/qcom/bq27541_fuelgauger.c
+          {
+            echo 'EXPERIMENTAL: COMPILED, NOT BOOT-TESTED, NOT CALIBRATED.'
+            echo 'Current observed phone: 4.19.325-cip136-st20-perf-ge72e381426f8-dirty'
+            echo "Compiled replacement: $(cat out/include/config/kernel.release)"
+            echo 'Never install the separate .ko into the currently running old kernel.'
+            echo 'Before testing: run no-arg BOOT backup script as root, and save original image off-phone.'
+            echo 'Before testing: verify model enchilada and boot recovery/fastboot path.'
+            echo 'Flashing requires explicit user action; no automatic flashing.'
+            echo 'The package does not write BQ27411 DataFlash or change charging safety limits.'
+          } > dist/TRUEFUEL_READ_ME_FIRST.txt
+          cp tools/battery/truefuel/OP6_TrueFuel_Backup_Boot_v0.1.sh dist/
+          cp tools/battery/truefuel/OP6_TrueFuel_Native_Check_v0.5.sh dist/
+          sha256sum "$AK3" > dist/TRUEFUEL_AK3_SHA256SUMS.txt
+          echo "Candidate ZIP: $AK3"
+          echo "Image SHA256: $expected"
+          echo "Kernel: $(cat out/include/config/kernel.release)"
+      - name: Upload experimental AK3 bundle (manual test only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: OP6-TrueFuel-e72-AK3-EXPERIMENTAL-UNTESTED
+          path: dist/
+          if-no-files-found: error
+          retention-days: 21
